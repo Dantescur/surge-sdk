@@ -14,7 +14,6 @@ path = "src/main.rs"
 [dependencies]
 bytes = "1.10.1"
 chrono = "0.4.41"
-colored = "3.0.0"
 env_logger = "0.11.8"
 flate2 = "1.1.1"
 futures = "0.3.31"
@@ -25,7 +24,6 @@ ndjson-stream = { version = "0.1.0", features = ["stream"] }
 reqwest = { version = "0.12.15", features = ["json", "stream"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-tabled = { version = "0.19.0", features = ["ansi"] }
 tar = "0.4.44"
 thiserror = "2.0.12"
 tokio = { version = "1.45.0", features = ["full"] }
