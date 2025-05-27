@@ -12,6 +12,8 @@ pub enum SurgeError {
     Api(ApiError),
     #[error("Event error: {0}")]
     EventError(Event),
+    #[error("Parsing url error: {0}")]
+    ParsingError(#[from] url::ParseError),
     #[error("Invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("IO error: {0}")]
