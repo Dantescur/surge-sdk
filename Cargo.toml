@@ -7,16 +7,11 @@ edition = "2024"
 name = "surge_sdk"
 path = "src/lib.rs"
 
-[[bin]]
-name = "surge-sdk"
-path = "src/main.rs"
-
 [dependencies]
+async-compression = { version = "0.4.23", features = ["gzip", "tokio"] }
 bytes = "1.10.1"
-chrono = "0.4.41"
+chrono = { version = "0.4.41", features = ["serde"] }
 env_logger = "0.11.8"
-flate2 = "1.1.1"
-futures = "0.3.31"
 futures-util = "0.3.31"
 ignore = "0.4.23"
 log = "0.4.27"
@@ -24,12 +19,19 @@ ndjson-stream = { version = "0.1.0", features = ["stream"] }
 reqwest = { version = "0.12.15", features = ["json", "stream"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-tar = "0.4.44"
 thiserror = "2.0.12"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-stream = "0.1.17"
+tokio-tar = "0.3.1"
+tar = "0.4.44"
 tokio-util = "0.7.15"
 url = "2.5.4"
+flate2 = "1.1.1"
+rand = "0.9.1"
+semver = { version = "1.0.26", features = ["serde"] }
 
 [dev-dependencies]
+mockito = "1.7.0"
+regex = "1.11.1"
+tempfile = "3.20.0"
 tokio = { version = "1.45.0", features = ["test-util"] }
