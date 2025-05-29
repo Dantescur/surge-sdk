@@ -1,7 +1,4 @@
 /*
-  src/responses/manifest.rs
-*/
-/*
   responses/manifest.rs
 */
 use serde::{Deserialize, Serialize};
