@@ -1,5 +1,7 @@
 # Surge SDK for Rust
 
+[![Cargo Build & Test](https://github.com/Dantescur/surge-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/Dantescur/surge-sdk/actions/workflows/ci.yml)
+
 <!--toc:start-->
 
 - [Surge SDK for Rust](#surge-sdk-for-rust)
