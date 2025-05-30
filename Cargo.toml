@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/dantescur/surge-sdk"
 keywords = ["surge", "deployment", "static-site", "dns", "ssl"]
 categories = ["api-bindings", "web-programming"]
+rust-version = "1.85.1"
 
 [lib]
 name = "surge_sdk"
