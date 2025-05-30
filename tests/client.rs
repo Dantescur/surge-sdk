@@ -127,7 +127,17 @@ async fn test_list_no_domain() {
         .with_body(
             json!([{
                 "domain": "test.surge.sh",
-                "planName": "Standard",
+                "planName": {
+                    "name": "Standard",
+                    "id": "3",
+                    "amount": 22,
+                    "friendly": "yes",
+                    "dummy": false,
+                    "current": true,
+                    "metadata": {
+                        "type": "info",
+                        "extra": "tired"
+                }},
                 "rev": 123456,
                 "cmd": "surge",
                 "email": "test@example.com",
