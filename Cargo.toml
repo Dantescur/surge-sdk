@@ -1,6 +1,6 @@
 [package]
 name = "surge-sdk"
-version = "0.1.0"
+version = "0.1.1-alpha.1"
 edition = "2024"
 authors = ["Cesar Daniel <cesardaniel.9611@gmail.com>"]
 description = "Rust SDK for Surge.sh API - programmatically manage static site deployments, domains, SSL, and DNS"

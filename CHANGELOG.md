@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Generated CHANGELOG.md
 - Added ci status badge
 - Setup cargo release and git cliff
 - Improve doc and module comments
