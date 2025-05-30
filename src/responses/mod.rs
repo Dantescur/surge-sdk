@@ -31,7 +31,7 @@ pub use danalytics::DAnalyticsResponse;
 pub use daudit::DAuditResponse;
 
 /// Represents the list of deployments, including associated plans.
-pub use list::{ListResponse, Plan};
+pub use list::ListResponse;
 
 /// Represents the result of a login operation, typically containing tokens or session info.
 pub use login::LoginResponse;

@@ -1,9 +1,3 @@
-/*
-  src/responses/uploadfin.rs
-*/
-/*
-  responses/uploadfin.rs
-*/
 use serde::{Deserialize, Serialize};
 
 use super::{Cert, Instance, Metadata, Url};

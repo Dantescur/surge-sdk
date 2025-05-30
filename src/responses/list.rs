@@ -1,6 +1,7 @@
 /*
   src/responses/list.rs
 */
+use super::{Output, Plan};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -16,7 +17,7 @@ pub struct Deployment {
     pub email: String,
     pub platform: String,
     pub cli_version: String,
-    pub output: Option<HashMap<String, serde_json::Value>>,
+    pub output: Option<Output>,
     pub config: Option<Config>,
     pub message: Option<String>,
     pub build_time: Option<f64>,
@@ -33,15 +34,6 @@ pub struct Deployment {
     pub time_ago_in_words: String,
     #[serde(flatten)]
     extra_fields: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-// #[serde(rename_all = "kebab-case")]
-pub enum Plan {
-    Standard,
-    Pro,
-    Enterprise,
-    Custom(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

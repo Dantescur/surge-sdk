@@ -3,7 +3,7 @@
 */
 use serde::{Deserialize, Serialize};
 
-use super::StripeAccount;
+use super::{Plan, StripeAccount};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountResponse {
@@ -18,24 +18,4 @@ pub struct AccountResponse {
     pub stripe: Option<StripeAccount>,
     pub plan: Plan,
     pub card: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Plan {
-    pub id: String,
-    pub name: String,
-    pub amount: String,
-    pub friendly: String,
-    pub dummy: bool,
-    pub current: bool,
-    pub metadata: PlanMetadata,
-    pub ext: String,
-    pub perks: Vec<String>,
-    pub comped: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanMetadata {
-    #[serde(rename = "type")]
-    pub metadata_type: String,
 }

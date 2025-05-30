@@ -1,17 +1,17 @@
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
     #[serde(rename = "type")]
-    pub metadata_type: String,
+    pub type_: String,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Cert {
     pub subject: String,
     pub issuer: String,
@@ -27,7 +27,7 @@ pub struct Cert {
     pub key_type: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
     pub id: String,
@@ -48,7 +48,7 @@ pub struct Plan {
     pub features: HashMap<String, bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Amount {
     Integer(u64),
@@ -68,7 +68,7 @@ impl Amount {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Url {
     pub name: String,
     pub domain: String,
@@ -78,7 +78,7 @@ pub struct Url {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Clone, Deserialize, Default)]
 pub struct Output {
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -91,7 +91,7 @@ pub struct CommonMetadata {
     pub cmd: String,
     pub email: String,
     pub platform: String,
-    pub cli_version: semver::Version,
+    pub cli_version: Version,
     pub output: Output,
     pub config: Output,
     #[serde(default)]
@@ -116,11 +116,11 @@ pub struct CommonMetadata {
     pub time_ago_in_words: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Instance {
     #[serde(rename = "type")]
-    pub instance_type: InstanceType,
+    pub type_: InstanceType,
     #[serde(default)]
     pub provider: Option<Provider>,
     pub domain: String,
@@ -139,7 +139,7 @@ pub struct Instance {
     pub port: Option<u16>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Confirmation {
     Checkmark,
@@ -148,7 +148,7 @@ pub enum Confirmation {
     Unknown,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Color {
     Green,
@@ -158,7 +158,7 @@ pub enum Color {
     Custom(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum Info {
     Available,
@@ -184,11 +184,11 @@ pub enum InstanceType {
     Txt,
     #[serde(rename = "OTHER")]
     Other,
-    #[serde(skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     Unknown(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
     DigitalOcean,
@@ -200,7 +200,7 @@ pub enum Provider {
     Custom(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Active,
