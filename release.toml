@@ -1,0 +1,12 @@
+pre-release-replacements = [
+  { file = "README.md", search = "surge_sdk = .*", replace = "{{crate_name}} = \"{{version}}\"" },
+]
+
+pre-release-hook = [
+  "git",
+  "cliff",
+  "-o",
+  "CHANGELOG.md",
+  "--tag",
+  "{{version}}",
+]
