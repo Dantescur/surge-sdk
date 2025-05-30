@@ -2,36 +2,51 @@
 name = "surge-sdk"
 version = "0.1.0"
 edition = "2024"
+authors = ["Cesar Daniel <cesardaniel.9611@gmail.com>"]
+description = "Rust SDK for Surge.sh API - programmatically manage static site deployments, domains, SSL, and DNS"
+license = "MIT"
+repository = "https://github.com/dantescur/surge-sdk"
+keywords = ["surge", "deployment", "static-site", "dns", "ssl"]
+categories = ["api-bindings", "web-programming"]
 
 [lib]
 name = "surge_sdk"
 path = "src/lib.rs"
 
 [dependencies]
-async-compression = { version = "0.4.23", features = ["gzip", "tokio"] }
-bytes = "1.10.1"
-chrono = { version = "0.4.41", features = ["serde"] }
-env_logger = "0.11.8"
-futures-util = "0.3.31"
-ignore = "0.4.23"
-log = "0.4.27"
-ndjson-stream = { version = "0.1.0", features = ["stream"] }
+# Core HTTP/Async
 reqwest = { version = "0.12.15", features = ["json", "stream"] }
+tokio = { version = "1.45.0", features = ["full"] }
+futures-util = "0.3.31"
+
+# Data Processing
+bytes = "1.10.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-thiserror = "2.0.12"
-tokio = { version = "1.45.0", features = ["full"] }
-tokio-stream = "0.1.17"
-tokio-tar = "0.3.1"
+ndjson-stream = { version = "0.1.0", features = ["stream"] }
+
+# Dile/Archive Handling
+ignore = "0.4.23"
 tar = "0.4.44"
-tokio-util = "0.7.15"
-url = "2.5.4"
 flate2 = "1.1.1"
+
+# Utilities
+chrono = { version = "0.4.41", features = ["serde"] }
+log = "0.4.27"
+thiserror = "2.0.12"
+url = "2.5.4"
 rand = "0.9.1"
 semver = { version = "1.0.26", features = ["serde"] }
 
+# Runtime
+tokio-util = "0.7.15"
+
 [dev-dependencies]
+# Testing
 mockito = "1.7.0"
-regex = "1.11.1"
 tempfile = "3.20.0"
-tokio = { version = "1.45.0", features = ["test-util"] }
+tokio = { version = "1.45.0", features = ["test-util", "rt-multi-thread"] }
+
+# Test Utilities
+regex = "1.11.1"
+env_logger = "0.11.8"
