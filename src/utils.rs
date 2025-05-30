@@ -1,3 +1,36 @@
+//! Module for utility functions in the Surge SDK.
+//!
+//! This module provides helper functions for generating random domain names and converting JSON
+//! objects to command-line arguments, primarily used to support the Surge SDK's operations. It
+//! includes utilities for creating memorable, hyphenated identifiers (e.g., `adjective-noun`) and
+//! constructing `.surge.sh` domain names with optional random numbers. Additionally, it offers
+//! functionality to transform JSON data into a format suitable for command-line arguments, which is
+//! useful for interacting with the Surge API's command-line interface conventions.
+//!
+//! Key functions include:
+//! - `choose`: Generates a random two-word identifier combining adjectives, nouns, or verbs.
+//! - `generate_domain`: Creates a `.surge.sh` domain name, optionally appending a random number.
+//! - `json_to_argv`: Converts a JSON object into a vector of command-line arguments.
+//! - `words_from`: A helper function to parse static word lists into trimmed vectors.
+//!
+//! The module uses word lists (`adjectives.txt`, `nouns.txt`, `verbs.txt`) included at compile time
+//! to generate identifiers and relies on the `rand` crate for randomization. It also includes a test
+//! suite to verify the correctness of domain name generation and JSON-to-argv conversion.
+//!
+//! # Example
+//! ```
+//! use surge_sdk::utils::{generate_domain, json_to_argv};
+//!
+//! // Generate a domain name
+//! let domain = generate_domain(true);
+//! println!("Generated domain: {}", domain); // e.g., "happy-cat-1234.surge.sh"
+//!
+//! // Convert JSON to command-line arguments
+//! let json = r#"{"_": ["dist/"], "endpoint": "https://surge.surge.sh", "stage": false}"#;
+//! let args = json_to_argv(json);
+//! println!("Arguments: {:?}", args); // e.g., ["dist/", "--endpoint", "https://surge.surge.sh", "--stage", "false"]
+//! ```
+
 use rand::Rng;
 use rand::prelude::IndexedRandom;
 use serde_json::Value;

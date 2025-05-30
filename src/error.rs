@@ -1,13 +1,25 @@
-// src/error.rs
+//! Error handling module for the Surge SDK.
+//!
+//! This module defines the `SurgeError` enum, which provides a unified way to represent
+//! all possible errors that may occur in the Surge SDK. It wraps errors from common crates
+//! such as `reqwest`, `serde_json`, `url`, `ignore`, and the standard library, as well as
+//! custom error types like `ApiError` and `Event`.
 use serde::Deserialize;
 use thiserror::Error;
 
 use crate::Event;
 
-/// Unified error type for the Surge project.
+/// Unified error type for the Surge SDK.
 ///
-/// Encapsulates various errors that can occur during HTTP requests, file operations,
-/// URL parsing, JSON processing, and event handling.
+/// This enum encapsulates all possible error types that might occur during SDK usage, including:
+/// - HTTP request failures
+/// - Server-side API errors
+/// - Event processing errors
+/// - URL parsing issues
+/// - JSON (de)serialization issues
+/// - File system or I/O errors
+/// - Ignore rules and directory walking issues
+/// - Other unexpected or miscellaneous errors
 #[derive(Error, Debug)]
 pub enum SurgeError {
     /// HTTP-related errors from the `reqwest` crate.
@@ -45,15 +57,25 @@ pub enum SurgeError {
 
 /// Represents an error response from the API.
 ///
-/// Deserialized from JSON responses containing error messages, details, and an optional status code.
+/// This struct is used to deserialize error responses returned by the remote server.
+/// It typically includes a list of error messages, optional HTTP status code, and any
+/// additional details provided in the response body.
 #[derive(Debug, Deserialize)]
 pub struct ApiError {
+    /// A list of error messages provided by the API.
     pub errors: Vec<String>,
+
+    /// A JSON value with additional details (may be an object, array, or primitive).
     pub details: serde_json::Value,
+
+    /// Optional HTTP status code.
     pub status: Option<u16>,
 }
 
 /// Converts a `StripPrefixError` into a `SurgeError::Io`.
+///
+/// This is useful when paths cannot be relativized, and we want to represent this
+/// failure as a standard I/O error.
 impl From<std::path::StripPrefixError> for SurgeError {
     fn from(e: std::path::StripPrefixError) -> Self {
         SurgeError::Io(std::io::Error::new(
@@ -64,6 +86,8 @@ impl From<std::path::StripPrefixError> for SurgeError {
 }
 
 /// Converts a `tokio::task::JoinError` into a `SurgeError::Io`.
+///
+/// This enables seamless propagation of async task join errors within the SDK.
 impl From<tokio::task::JoinError> for SurgeError {
     fn from(e: tokio::task::JoinError) -> Self {
         SurgeError::Io(std::io::Error::other(e.to_string()))

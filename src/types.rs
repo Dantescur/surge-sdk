@@ -1,4 +1,36 @@
-// src/types.rs
+//! Module defining core data types for the Surge SDK.
+//!
+//! This module provides essential data structures used throughout the Surge SDK for interacting
+//! with the Surge API. It includes types for authentication credentials and events received from
+//! streaming endpoints. These types are designed to be lightweight, serializable, and easy to use
+//! in conjunction with the SDK's asynchronous operations.
+//!
+//! Key types include:
+//! - `Auth`: An enum supporting token-based or username/password authentication for API requests.
+//! - `Event`: A struct representing events from NDJSON streaming endpoints, such as those used in
+//!   publishing or encryption operations, with a type identifier and arbitrary JSON data.
+//!
+//! The types are implemented with `serde` for deserialization and include display formatting for
+//! easier debugging and logging. The module is intended to be used by other parts of the SDK,
+//! such as the `SurgeSdk` client and streaming utilities, to handle authentication and process
+//! API responses.
+//!
+//! # Example
+//! ```
+//! use surge_sdk::types::{Auth, Event};
+//! use serde_json::json;
+//!
+//! // Example of creating authentication credentials
+//! let auth = Auth::Token("your-api-token".to_string());
+//!
+//! // Example of creating an event
+//! let event = Event {
+//!     event_type: "info".to_string(),
+//!     data: json!({ "message": "Operation successful" }),
+//! };
+//! println!("{}", event); // Outputs: [Event: info] { "message": "Operation successful" }
+//! ```
+
 use serde::Deserialize;
 use std::fmt;
 
@@ -10,7 +42,12 @@ pub enum Auth {
     /// Token-based authentication with a single token string.
     Token(String),
     /// Username and password authentication.
-    UserPass { username: String, password: String },
+    UserPass {
+        /// Username (email)
+        username: String,
+        /// Password (token)
+        password: String,
+    },
 }
 
 /// An event from NDJSON streaming endpoints (e.g., publish, encrypt).

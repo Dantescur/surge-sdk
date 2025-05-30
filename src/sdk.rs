@@ -1,6 +1,37 @@
-/*
-  src/sdk.rs
-*/
+//! Surge SDK for interacting with the Surge API.
+//!
+//! This module provides a comprehensive SDK for managing domains, publishing projects, and handling
+//! account operations with the Surge API. It encapsulates an HTTP client configured with user-specified
+//! settings and provides methods for various API operations such as account management, domain
+//! operations, DNS configuration, SSL certificate management, and more. The SDK supports both token-based
+//! and username/password authentication, and it handles streaming responses for operations like project
+//! publishing and SSL encryption.
+//!
+//! The main entry point is the `SurgeSdk` struct, which holds the configuration and HTTP client. All API
+//! interactions are performed asynchronously using the `reqwest` crate, and responses are deserialized
+//! into appropriate Rust types or raw JSON values where applicable. Errors are handled using the
+//! `SurgeError` type, which encapsulates various failure modes such as HTTP errors, JSON parsing errors,
+//! and API-specific errors.
+//!
+//! # Features
+//! - Account management: Fetch account details, update plans, and manage payment methods.
+//! - Domain operations: List, publish, rollback, and tear down domains.
+//! - DNS and SSL: Manage DNS records, SSL certificates, and encryption requests.
+//! - Streaming support: Handle streaming responses for publishing and encryption operations.
+//! - Authentication: Supports both token-based and username/password authentication.
+//!
+//! # Example
+//! ```rust,no_run
+//! use surge_sdk::{Config, SurgeSdk, Auth, SURGE_API};
+//! # async fn example() -> Result<(), surge_sdk::error::SurgeError> {
+//! let config = Config::new(SURGE_API, "0.1.0").unwrap();
+//! let sdk = SurgeSdk::new(config)?;
+//! let auth = Auth::Token("your-api-token".to_string());
+//! let account = sdk.account(&auth).await?;
+//! println!("Account: {:?}", account);
+//! # Ok(())
+//! # }
+//! ```
 use futures_util::{Stream, StreamExt};
 use log::{debug, error, info, trace};
 use ndjson_stream::{
@@ -25,7 +56,9 @@ use crate::{
 /// Encapsulates an HTTP client and configuration for managing domains, publishing projects,
 /// and handling account operations.
 pub struct SurgeSdk {
+    /// Configuration settings for the SDK, including the API endpoint and timeout settings.
     pub config: Config,
+    /// The HTTP client used for making API requests, configured with the provided settings.
     pub client: Client,
 }
 

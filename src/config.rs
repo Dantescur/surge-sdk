@@ -1,13 +1,37 @@
+//! Configuration module for the Surge SDK.
+//!
+//! Provides the `Config` struct used to configure SDK behavior including:
+//! - API endpoint URL
+//! - Client version
+//! - Connection timeout
+//! - Security settings
+//!
+//! This module ensures that configuration is easy to construct, validate, and extend with
+//! builder-style methods for convenience.
+
 use url::Url;
 
-/// Configuration settings for the SDK
+/// Configuration settings for the SDK.
 ///
 /// Holds the API endpoint, version, timeout duration, and security settings.
+///
+/// # Fields
+/// - `endpoint`: Base URL for the Surge API (must be a valid `Url`)
+/// - `version`: SDK or client version string
+/// - `insecure`: Whether to allow insecure HTTP connections (default is `false`)
+/// - `timeout_secs`: Timeout in seconds for network operations (default is `30`)
 #[derive(Debug)]
 pub struct Config {
+    /// The base API endpoint URL.
     pub endpoint: Url,
+
+    /// The client or SDK version string.
     pub version: String,
+
+    /// Whether to allow insecure HTTP connections (e.g., without TLS).
     pub insecure: bool,
+
+    /// Timeout duration for API calls, in seconds.
     pub timeout_secs: u64,
 }
 

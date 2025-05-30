@@ -1,3 +1,44 @@
+//! Module for streaming project publishing functionality in the Surge SDK.
+//!
+//! This module provides utilities for publishing project directories to the Surge API by creating
+//! `.tar.gz` archives and streaming them to the API endpoint. It includes functionality for generating
+//! tarballs, handling `.surgeignore` rules, calculating project metadata, and processing NDJSON
+//! responses from the API. The module is designed to work asynchronously, leveraging the `tokio` and
+//! `futures` ecosystems for efficient I/O operations.
+//!
+//! Key components include:
+//! - `TarGzStream`: A stream that generates chunks of a `.tar.gz` archive for a project directory,
+//!   respecting `.surgeignore` rules and handling file permissions and metadata.
+//! - `StreamMetadata`: A struct that holds metadata about a project directory, including file count
+//!   and total size in bytes.
+//! - `publish` and `publish_wip`: Functions for publishing projects and work-in-progress previews,
+//!   respectively, with support for custom headers and command-line arguments.
+//! - `calculate_metadata`: A utility function to compute file count and size for a project directory.
+//! - `build_custom_gitignore`: A helper function to create a gitignore matcher for `.surgeignore` rules.
+//!
+//! The module integrates with the `SurgeSdk` client for authentication and HTTP requests, and it uses
+//! the `ndjson_stream` crate to parse streaming API responses. Errors are handled using the `SurgeError`
+//! type, which encapsulates I/O, API, and JSON parsing errors.
+//!
+//! # Example
+//! ```rust,no_run
+//! use surge_sdk::{SURGE_API, Config, SurgeSdk, Auth, stream::publish};
+//! use futures_util::{StreamExt};
+//!
+//! # async fn example() -> Result<(), surge_sdk::error::SurgeError> {
+//! let config = Config::new(SURGE_API, "0.1.0").unwrap();
+//! let sdk = SurgeSdk::new(config)?;
+//! let auth = Auth::Token("your-api-token".to_string());
+//! let project_path = std::path::Path::new("./my-project");
+//! let stream = publish(&sdk, project_path, "example.com", &auth, None, None).await?;
+//! tokio::pin!(stream);
+//! while let Some(event) = stream.next().await {
+//!     println!("Event: {:?}", event);
+//! }
+//!  Ok(())
+//! }
+//! ```
+
 use crate::{
     error::SurgeError,
     sdk::SurgeSdk,
@@ -48,8 +89,10 @@ struct TarGzStream {
 /// Metadata about a project directory, including file count and total size.
 #[derive(Debug, Clone)]
 pub struct StreamMetadata {
-    pub file_count: u64,   // Numbers of files in project
-    pub project_size: u64, // Total size of files in bytes
+    /// The number of files in the project directory, excluding ignored files.
+    pub file_count: u64,
+    /// The total size of all files in the project directory, in bytes.
+    pub project_size: u64,
 }
 
 /// Calculates metadata (file count and total size) for a project directory.
