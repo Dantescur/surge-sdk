@@ -12,8 +12,4 @@ impl TestServer {
         let client = SurgeSdk::new(config).unwrap();
         Self { server, client }
     }
-
-    pub async fn mock_endpoint(&mut self, method: &str, path: &str) -> mockito::Mock {
-        self.server.mock(method, path).create_async().await
-    }
 }

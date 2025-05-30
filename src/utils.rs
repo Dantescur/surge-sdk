@@ -6,6 +6,13 @@ const ADJECTIVES: &str = include_str!(".././dict/adjectives.txt");
 const NOUNS: &str = include_str!(".././dict/nouns.txt");
 const VERBS: &str = include_str!(".././dict/verbs.txt");
 
+/// Converts a static string of words into a vector of trimmed, non-empty lines.
+///
+/// # Arguments
+/// * `s` - A static string containing words, one per line.
+///
+/// # Returns
+/// A vector of trimmed, non-empty words.
 fn words_from(s: &'static str) -> Vec<&'static str> {
     s.lines()
         .map(str::trim)
@@ -13,7 +20,10 @@ fn words_from(s: &'static str) -> Vec<&'static str> {
         .collect()
 }
 
-/// Retorna un string `adjective-noun`
+/// Generates a random two-word identifier (e.g., `adjective-noun`, `verb-noun`, or `adjective-verb`).
+///
+/// # Returns
+/// A hyphenated string combining two words.
 pub fn choose() -> String {
     let adjectives = words_from(ADJECTIVES);
     let nouns = words_from(NOUNS);
@@ -43,7 +53,13 @@ pub fn choose() -> String {
     }
 }
 
-/// Genera un dominio `.surge.sh`
+/// Generates a `.surge.sh` domain name, optionally with a random number.
+///
+/// # Arguments
+/// * `with_number` - Whether to append a random number (0-9999).
+///
+/// # Returns
+/// A domain name string (e.g., `happy-cat.surge.sh` or `happy-cat-1234.surge.sh`).
 pub fn generate_domain(with_number: bool) -> String {
     let base = choose();
     let mut rng = rand::rng();
@@ -55,6 +71,16 @@ pub fn generate_domain(with_number: bool) -> String {
     }
 }
 
+/// Converts a JSON object to a vector of command-line arguments.
+///
+/// # Arguments
+/// * `json` - A JSON string representing arguments.
+///
+/// # Returns
+/// A vector of strings representing command-line arguments.
+///
+/// # Panics
+/// Panics if the JSON is invalid.
 pub fn json_to_argv(json: &str) -> Vec<String> {
     let mut args = Vec::new();
     let parsed: Value = serde_json::from_str(json).expect("Invalid JSON");
@@ -87,9 +113,10 @@ pub fn json_to_argv(json: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{generate_domain, json_to_argv};
+    use crate::{SURGE_API, generate_domain, json_to_argv};
     use regex::Regex;
 
+    /// Tests generating a domain without a number.
     #[test]
     fn test_generate_domain_without_number() {
         let domain = generate_domain(false);
@@ -101,6 +128,7 @@ mod tests {
         );
     }
 
+    /// Tests generating a domain with a number.
     #[test]
     fn test_generate_domain_with_number() {
         let domain = generate_domain(true);
@@ -112,6 +140,7 @@ mod tests {
         );
     }
 
+    /// Tests converting JSON to command-line arguments.
     #[test]
     fn test_json_to_argv() {
         let json = r#"{
@@ -122,16 +151,11 @@ mod tests {
         let args = json_to_argv(json);
         assert_eq!(
             args,
-            vec![
-                "dist/",
-                "--endpoint",
-                "https://surge.surge.sh",
-                "--stage",
-                "false"
-            ]
+            vec!["dist/", "--endpoint", SURGE_API, "--stage", "false"]
         );
     }
 
+    /// Tests that invalid JSON panics.
     #[test]
     #[should_panic(expected = "Invalid JSON")]
     fn test_json_to_argv_invalid_json() {

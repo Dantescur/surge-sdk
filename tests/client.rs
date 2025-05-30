@@ -1,8 +1,6 @@
 // tests/client.rs
-use mockito::Matcher;
 use serde_json::json;
-use std::path::Path;
-use surge_sdk::{Auth, SurgeError, SurgeSdk};
+use surge_sdk::{Auth, SurgeError};
 use tempfile::tempdir;
 use tokio::fs;
 
@@ -187,7 +185,7 @@ async fn test_teardown_success() {
 
 #[tokio::test]
 async fn test_publish_metadata() {
-    let mut test_server = TestServer::new().await;
+    let _test_server = TestServer::new().await;
     let dir = tempdir().unwrap();
     let project_path = dir.path();
     fs::write(project_path.join("file1.txt"), "hello")
@@ -230,4 +228,3 @@ async fn test_dns() {
         "DNS may only be managed on apex domains."
     );
 }
-

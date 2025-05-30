@@ -1,5 +1,5 @@
 /*
-  src/client.rs
+  src/sdk.rs
 */
 use futures_util::{Stream, StreamExt};
 use log::{debug, error, info, trace};
@@ -20,12 +20,30 @@ use crate::{
     types::{Auth, Event},
 };
 
+/// SDK for interacting with the Surge API.
+///
+/// Encapsulates an HTTP client and configuration for managing domains, publishing projects,
+/// and handling account operations.
 pub struct SurgeSdk {
     pub config: Config,
     pub client: Client,
 }
 
 impl SurgeSdk {
+    /// Creates a new `SurgeSdk` instance with the given configuration.
+    ///
+    /// # Arguments
+    /// * `config` - Configuration settings for the SDK.
+    ///
+    /// # Returns
+    /// A `Result` containing the `SurgeSdk` or a `SurgeError` if the HTTP client cannot be built.
+    ///
+    /// # Example
+    /// ```
+    /// use surge_sdk::{Config,SurgeSdk};
+    /// let config = Config::new("https://api.surge.sh", "0.1.0").unwrap();
+    /// let sdk = SurgeSdk::new(config).unwrap();
+    /// ```
     pub fn new(config: Config) -> Result<Self, SurgeError> {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -35,20 +53,30 @@ impl SurgeSdk {
         Ok(Self { config, client })
     }
 
-    // Requires auth
+    /// Fetches account information.
+    ///
+    /// # Arguments
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing an `AccountResponse` or a `SurgeError`.
     pub async fn account(&self, auth: &Auth) -> Result<AccountResponse, SurgeError> {
         let url = self.config.endpoint.join("account")?;
-        debug!("Account url: {}", url);
         let req = self.apply_auth(self.client.get(url), auth);
         debug!("Request sended to account: {:#?}", req);
-        let res = req.send().await?;
-        let text = res.text().await?; // Get raw text response
-        debug!("Raw response: {}", text); // Log raw response
-        let parsed: AccountResponse = serde_json::from_str(&text)?; // Attempt deserialization
-        debug!("Response received: {:#?}", parsed);
-        Ok(parsed)
+        let res = req.send().await?.json().await?;
+        debug!("Response received: {:#?}", res);
+        Ok(res)
     }
 
+    /// Lists domains, optionally filtered by a specific domain.
+    ///
+    /// # Arguments
+    /// * `domain` - Optional domain to filter the list.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `ListResponse` or a `SurgeError`.
     pub async fn list(
         &self,
         domain: Option<&str>,
@@ -64,6 +92,13 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Deletes the account.
+    ///
+    /// # Arguments
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn nuke(&self, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("account")?;
         let req = self.apply_auth(self.client.delete(url), auth);
@@ -71,6 +106,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Tears down a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The domain to tear down.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing `true` if the operation was successful, or a `SurgeError`.
     pub async fn teardown(&self, domain: &str, auth: &Auth) -> Result<bool, SurgeError> {
         let url = self.config.endpoint.join(domain)?;
         let req = self.apply_auth(self.client.delete(url), auth);
@@ -79,6 +122,13 @@ impl SurgeSdk {
         Ok(response.status().is_success())
     }
 
+    /// Logs in to the API.
+    ///
+    /// # Arguments
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `LoginResponse` or a `SurgeError`.
     pub async fn login(&self, auth: &Auth) -> Result<LoginResponse, SurgeError> {
         let url = self.config.endpoint.join("token")?;
         let req = self.apply_auth(self.client.post(url), auth);
@@ -86,7 +136,19 @@ impl SurgeSdk {
         Ok(res)
     }
 
-    // Streaming methods (implemented in stream.rs, called here)
+    /// Publishes a project directory to a domain.
+    ///
+    /// Delegates to `stream::publish` for tarball creation and streaming.
+    ///
+    /// # Arguments
+    /// * `project_path` - Path to the project directory.
+    /// * `domain` - Target domain for publishing.
+    /// * `auth` - Authentication credentials.
+    /// * `headers` - Optional custom HTTP headers.
+    /// * `argv` - Optional command-line arguments.
+    ///
+    /// # Returns
+    /// A `Result` containing a stream of `Event`s or a `SurgeError`.
     pub async fn publish(
         &self,
         project_path: &Path,
@@ -98,7 +160,19 @@ impl SurgeSdk {
         crate::stream::publish(self, project_path, domain, auth, headers, argv).await
     }
 
-    // Streaming methods (implemented in stream.rs, called here)
+    /// Publishes a work-in-progress version of a project to a preview domain.
+    ///
+    /// Delegates to `stream::publish_wip` for tarball creation and streaming.
+    ///
+    /// # Arguments
+    /// * `project_path` - Path to the project directory.
+    /// * `domain` - Target domain for the preview.
+    /// * `auth` - Authentication credentials.
+    /// * `headers` - Optional custom HTTP headers.
+    /// * `argv` - Optional command-line arguments.
+    ///
+    /// # Returns
+    /// A `Result` containing a stream of `Event`s or a `SurgeError`.
     pub async fn publish_wip(
         &self,
         project_path: &Path,
@@ -110,6 +184,14 @@ impl SurgeSdk {
         crate::stream::publish_wip(self, project_path, domain, auth, headers, argv).await
     }
 
+    /// Rolls back a domain to a previous revision.
+    ///
+    /// # Arguments
+    /// * `domain` - The domain to roll back.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn rollback(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollback", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
@@ -117,6 +199,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Rolls forward a domain to a newer revision.
+    ///
+    /// # Arguments
+    /// * `domain` - The domain to roll forward.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn rollfore(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollfore", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
@@ -124,6 +214,15 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Switches a domain to a specific revision (or the latest if none specified).
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `revision` - Optional revision to switch to.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn cutover(
         &self,
         domain: &str,
@@ -140,6 +239,15 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Discards a specific revision (or all revisions if none specified) for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `revision` - Optional revision to discard.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn discard(
         &self,
         domain: &str,
@@ -156,6 +264,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Fetches SSL certificate information for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `DCertsResponse` or a `SurgeError`.
     pub async fn certs(&self, domain: &str, auth: &Auth) -> Result<DCertsResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/certs", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -163,6 +279,15 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches metadata for a domain or specific revision.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `revision` - Optional revision to fetch metadata for.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn metadata(
         &self,
         domain: &str,
@@ -179,6 +304,15 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches the manifest for a domain or specific revision.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `revision` - Optional revision to fetch the manifest for.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn manifest(
         &self,
         domain: &str,
@@ -195,18 +329,27 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches the file manifest for a domain (alias for `manifest` with no revision).
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn files(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         self.manifest(domain, None, auth).await
     }
 
-    // Helper to apply authentication
-    pub fn apply_auth(&self, req: reqwest::RequestBuilder, auth: &Auth) -> reqwest::RequestBuilder {
-        match auth {
-            Auth::Token(token) => req.basic_auth("token", Some(token)),
-            Auth::UserPass { username, password } => req.basic_auth(username, Some(password)),
-        }
-    }
-
+    /// Updates configuration settings for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `settings` - JSON settings to apply.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn config(
         &self,
         domain: &str,
@@ -219,6 +362,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Fetches DNS records for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn dns(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/dns", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -226,6 +377,15 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Adds a DNS record for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `record` - JSON representation of the DNS record.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn dns_add(
         &self,
         domain: &str,
@@ -238,6 +398,15 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Removes a DNS record for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `id` - The ID of the DNS record to remove.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn dns_remove(&self, domain: &str, id: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self
             .config
@@ -248,6 +417,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Fetches zone information for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn zone(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/zone", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -255,6 +432,15 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Adds a zone record for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `record` - JSON representation of the zone record.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn zone_add(
         &self,
         domain: &str,
@@ -267,6 +453,15 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Removes a zone record for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `id` - The ID of the zone record to remove.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn zone_remove(&self, domain: &str, id: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self
             .config
@@ -277,6 +472,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Clears the cache for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn bust(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/cache", domain))?;
         let req = self.apply_auth(self.client.delete(url), auth);
@@ -284,6 +487,13 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Fetches account statistics.
+    ///
+    /// # Arguments
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn stats(&self, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join("stats")?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -291,6 +501,14 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches analytics data for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn analytics(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self
             .config
@@ -301,6 +519,14 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches usage data for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn usage(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/usage", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -308,6 +534,14 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Fetches audit logs for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn audit(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/audit", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
@@ -315,6 +549,15 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Invites collaborators to a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `emails` - JSON array of email addresses to invite.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn invite(&self, domain: &str, emails: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self
             .config
@@ -325,6 +568,15 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Revokes collaborator access for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `emails` - JSON array of email addresses to revoke.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn revoke(&self, domain: &str, emails: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self
             .config
@@ -335,6 +587,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Updates the account plan.
+    ///
+    /// # Arguments
+    /// * `plan` - JSON representation of the plan.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn plan(&self, plan: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("plan")?;
         let req = self.apply_auth(self.client.put(url), auth).json(&plan);
@@ -342,6 +602,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Updates the payment card for the account.
+    ///
+    /// # Arguments
+    /// * `card` - JSON representation of the card details.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn card(&self, card: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("card")?;
         let req = self.apply_auth(self.client.put(url), auth).json(&card);
@@ -349,6 +617,14 @@ impl SurgeSdk {
         Ok(())
     }
 
+    /// Fetches available plans, optionally for a specific domain.
+    ///
+    /// # Arguments
+    /// * `domain` - Optional domain to filter plans.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
     pub async fn plans(&self, domain: Option<&str>, auth: &Auth) -> Result<Value, SurgeError> {
         let path = match domain {
             Some(d) => format!("{}/plans", d),
@@ -360,6 +636,16 @@ impl SurgeSdk {
         Ok(res)
     }
 
+    /// Requests SSL encryption for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `auth` - Authentication credentials.
+    /// * `headers` - Optional custom HTTP headers.
+    /// * `argv` - Optional command-line arguments.
+    ///
+    /// # Returns
+    /// A `Result` containing a stream of `Event`s or a `SurgeError`.
     pub async fn encrypt(
         &self,
         domain: &str,
@@ -464,11 +750,35 @@ impl SurgeSdk {
         }))
     }
 
+    /// Uploads an SSL certificate for a domain.
+    ///
+    /// # Arguments
+    /// * `domain` - The target domain.
+    /// * `pem_path` - Path to the PEM certificate file.
+    /// * `auth` - Authentication credentials.
+    ///
+    /// # Returns
+    /// A `Result` indicating success or a `SurgeError`.
     pub async fn ssl(&self, domain: &str, pem_path: &Path, auth: &Auth) -> Result<(), SurgeError> {
         let pem_data = fs::read(pem_path).map_err(|e| SurgeError::Io(std::io::Error::other(e)))?;
         let url = self.config.endpoint.join(&format!("{}/certs", domain))?;
         let req = self.apply_auth(self.client.post(url), auth).body(pem_data);
         req.send().await?;
         Ok(())
+    }
+
+    /// Applies authentication to an HTTP request.
+    ///
+    /// # Arguments
+    /// * `req` - The `reqwest::RequestBuilder` to modify.
+    /// * `auth` - Authentication credentials (token or username/password).
+    ///
+    /// # Returns
+    /// The modified `RequestBuilder` with authentication headers.
+    pub fn apply_auth(&self, req: reqwest::RequestBuilder, auth: &Auth) -> reqwest::RequestBuilder {
+        match auth {
+            Auth::Token(token) => req.basic_auth("token", Some(token)),
+            Auth::UserPass { username, password } => req.basic_auth(username, Some(password)),
+        }
     }
 }

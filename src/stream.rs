@@ -27,28 +27,46 @@ use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
 use tokio_util::io::ReaderStream;
 
+/// Errors that can occur during tarbar creation or directory traversal.
 #[derive(Debug, Error)]
 enum TarGzError {
+    /// Wraps I/O errors from file operations.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Wraps errors from directory traversal using `ignore` crate.
     #[error("Directory walk error: {0}")]
     WalkError(#[from] ignore::Error),
 }
 
+/// A stream that generates a `.tar.gz` archive of a project directory
 struct TarGzStream {
-    reader: ReaderStream<DuplexStream>,
-    task: Option<JoinHandle<Result<(), SurgeError>>>, // Changed to Option to clear after completion
-    done: bool,
+    reader: ReaderStream<DuplexStream>, // Stream for reading tarball chunks
+    task: Option<JoinHandle<Result<(), SurgeError>>>, // Async task for tarbar creation
+    done: bool,                         // Flag to indicate stream completition
 }
 
+/// Metadata about a project directory, including file count and total size.
 #[derive(Debug, Clone)]
 pub struct StreamMetadata {
-    pub file_count: u64,
-    pub project_size: u64,
+    pub file_count: u64,   // Numbers of files in project
+    pub project_size: u64, // Total size of files in bytes
 }
 
+/// Calculates metadata (file count and total size) for a project directory.
+///
+/// # Arguments
+/// * `project_path` - Path to the project directory.
+///
+/// # Returns
+/// A `Result` containing `StreamMetadata` or a `SurgeError` if the path is invalid or an error occurs.
+///
+/// # Notes
+/// - Respects `.surgeignore` rules for excluding files.
+/// - Uses parallel directory traversal for efficiency.
 pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeError> {
     debug!("Calculating metadata for path: {:?}", project_path);
+
+    // Validate that the path is a directory
     if !project_path.is_dir() {
         error!("Project path {:?} is not a directory", project_path);
         return Err(SurgeError::Io(std::io::Error::new(
@@ -57,14 +75,18 @@ pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeEr
         )));
     }
 
+    // Build gitignore rules for filtering
     let gitignore = build_custom_gitignore(project_path)?;
 
+    // Set up parallel di traversal
     let walker = WalkBuilder::new(project_path)
-        .standard_filters(false) // opcional, si quieres ignorar .gitignore y similares
+        .standard_filters(false) // Disable default .gitignore filters
         .build_parallel();
 
+    // Channel for ccollecting directoty entries
     let (tx, rx) = std::sync::mpsc::channel();
 
+    // Run the directory walker
     walker.run(move || {
         let tx = tx.clone();
         let gitignore = gitignore.clone();
@@ -73,9 +95,10 @@ pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeEr
             match result {
                 Ok(entry) => {
                     let path = entry.path();
+                    // Check if the path is ignored
                     let matched = gitignore.matched_path_or_any_parents(path, path.is_dir());
                     if !matched.is_ignore() {
-                        tx.send(entry).ok();
+                        tx.send(entry).ok(); // Send non-ignored entries
                     };
                 }
                 Err(err) => {
@@ -89,6 +112,7 @@ pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeEr
     let mut file_count = 0;
     let mut project_size = 0;
 
+    // Process entries for calculate metadata
     for entry in rx {
         let path = entry.path();
         trace!("Processing file for metadata: {:?}", path);
@@ -111,9 +135,19 @@ pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeEr
     })
 }
 
+/// Creates a new `TarGzStream` for a project directory.
+///
+/// # Arguments
+/// * `project_path` - Path to the project directory.
+/// * `chunk_size` - Size of the duplex stream buffer.
+///
+/// # Returns
+/// A `Result` containing the `TarGzStream` or a `SurgeError` if the path is invalid or an error occurs.
 impl TarGzStream {
     fn new(project_path: &Path, chunk_size: usize) -> Result<Self, SurgeError> {
         debug!("Creating new TarGzStream for path: {:?}", project_path);
+
+        // Validate that the path is a directory
         if !project_path.is_dir() {
             error!("Project path {:?}: is not a directory", project_path);
             return Err(SurgeError::Io(std::io::Error::new(
@@ -122,6 +156,7 @@ impl TarGzStream {
             )));
         }
 
+        // Extract directory name for tarball paths
         let dir_name = project_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -131,10 +166,12 @@ impl TarGzStream {
         let project_path = project_path.to_path_buf();
         let ignore_matcher = build_custom_gitignore(&project_path)?;
 
+        // Create a duplex stream for async I/O
         let (reader, writer) = tokio::io::duplex(chunk_size);
 
+        // Spawn an async task to build the tarball
         let task = tokio::spawn(async move {
-            // Use a Vec as a temporary sync buffer
+            // Temporary buffer for tarball data
             let buffer = Vec::new();
             let mut encoder = GzEncoder::new(buffer, Compression::new(6));
 
@@ -150,6 +187,7 @@ impl TarGzStream {
                     let entry = entry.map_err(SurgeError::IgnoreError)?;
                     let path = entry.path();
 
+                    // Skip ignored files or non-files
                     let is_ignored = ignore_matcher
                         .matched_path_or_any_parents(path, path.is_dir())
                         .is_ignore();
@@ -159,9 +197,11 @@ impl TarGzStream {
                         continue;
                     }
 
+                    // Process each file
                     if path.is_file() {
                         trace!("Processing file: {}", path.display());
 
+                        // Compute relative path for tar
                         let rel_path = path
                             .strip_prefix(project_path.parent().unwrap_or(Path::new("")))
                             .map_err(|e| {
@@ -187,9 +227,10 @@ impl TarGzStream {
                             metadata.permissions().mode()
                         );
 
+                        // Set up tar header
                         let mut header = Header::new_ustar();
                         header.set_size(metadata.len());
-                        header.set_mode(0o644);
+                        header.set_mode(0o644); // Standard file permissions
                         header.set_mtime(
                             metadata
                                 .modified()
@@ -198,6 +239,7 @@ impl TarGzStream {
                         );
                         header.set_cksum();
 
+                        // Add file to tar
                         let mut file = File::open(path)?;
                         tar.append_data(&mut header, &tar_path, &mut file)
                             .map_err(|e| SurgeError::Io(std::io::Error::other(e.to_string())))?;
@@ -205,11 +247,12 @@ impl TarGzStream {
                 }
 
                 tar.finish()?;
-            } // tar is dropped here, releasing the borrow on encoder
+            } // Drop tar to release encoder borrow
 
+            // Finalize gzip compression
             let data = encoder.finish()?;
 
-            // Write the tarball data to the DuplexStream asynchronously
+            // Write tarball to the duplex stream
             let mut writer = writer;
             writer.write_all(&data).await?;
             writer.shutdown().await?;
@@ -224,6 +267,7 @@ impl TarGzStream {
     }
 }
 
+/// Implements the `Stream` trait to produce chunks of the `.tar.gz` archive.
 impl Stream for TarGzStream {
     type Item = Result<Bytes, SurgeError>;
 
@@ -284,6 +328,18 @@ impl Stream for TarGzStream {
     }
 }
 
+/// Publishes a project directory as a `.tar.gz` archive to a remote endpoint.
+///
+/// # Arguments
+/// * `client` - The `SurgeSdk` client for making HTTP requests.
+/// * `project_path` - Path to the project directory.
+/// * `domain` - Target domain for publishing.
+/// * `auth` - Authentication credentials.
+/// * `headers` - Optional custom HTTP headers.
+/// * `argv` - Optional command-line arguments for the request.
+///
+/// # Returns
+/// A `Result` containing a stream of `Event`s or a `SurgeError` if the request fails.
 pub async fn publish(
     client: &SurgeSdk,
     project_path: &Path,
@@ -295,12 +351,15 @@ pub async fn publish(
     info!("Publishing to domain: {}", domain);
     debug!("Project path: {:?}", project_path);
 
+    // Construct the target URL
     let url = format!("{}{}", client.config.endpoint, domain);
     debug!("URL: {}", url);
 
+    // Calculate project metadata
     let metadata = calculate_metadata(project_path)?;
     let timestamp = chrono::Utc::now().to_rfc3339();
 
+    // Serialize argv as JSON
     let argv_json = argv.map_or_else(
         || {
             Ok(json!({
@@ -323,6 +382,7 @@ pub async fn publish(
         },
     )?;
 
+    // Build HTTP request
     let mut req = client
         .client
         .put(&url)
@@ -338,6 +398,7 @@ pub async fn publish(
         .header("file-count", metadata.file_count.to_string())
         .header("project-size", metadata.project_size.to_string());
 
+    // Add custom headers if provided
     if let Some(headers) = headers {
         debug!("Adding custom headers: {:?}", headers);
         for (key, value) in headers {
@@ -345,14 +406,17 @@ pub async fn publish(
         }
     }
 
+    // Create tarball stream and attach to request
     let tar_gz_stream = TarGzStream::new(project_path, 8192)?;
     req = req.body(Body::wrap_stream(tar_gz_stream));
     req = client.apply_auth(req, auth);
 
+    // Send request
     debug!("Sending request to {}", url);
     let res = req.send().await?;
     debug!("Response status: {}", res.status());
 
+    // Check response status
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await?;
@@ -366,6 +430,7 @@ pub async fn publish(
 
     info!("Successfully uploaded tarball for domain: {}", domain);
 
+    // Process response as NDJSON stream
     let stream = res.bytes_stream();
     let config = NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
 
@@ -406,6 +471,18 @@ pub async fn publish(
     }))
 }
 
+/// Publishes a work-in-progress (WIP) version of a project to a preview domain.
+///
+/// # Arguments
+/// * `client` - The `SurgeSdk` client for making HTTP requests.
+/// * `project_path` - Path to the project directory.
+/// * `domain` - Target domain for the preview.
+/// * `auth` - Authentication credentials.
+/// * `headers` - Optional custom HTTP headers.
+/// * `argv` - Optional command-line arguments for the request.
+///
+/// # Returns
+/// A `Result` containing a stream of `Event`s or a `SurgeError` if the request fails.
 pub async fn publish_wip(
     client: &SurgeSdk,
     project_path: &Path,
@@ -417,13 +494,16 @@ pub async fn publish_wip(
     info!("Publishing WIP to domain: {}", domain);
     debug!("Project path: {:?}", project_path);
 
+    // Create a unique preview domain
     let preview_domain = format!("{}-{}", chrono::Utc::now().timestamp_millis(), domain);
     let url = format!("{}{}", client.config.endpoint, preview_domain);
     debug!("Preview URL: {}", url);
 
+    // Calculate project metadata
     let metadata = calculate_metadata(project_path)?;
     let timestamp = chrono::Utc::now().to_rfc3339();
 
+    // Serialize argv as JSON with stage=true
     let argv_json = argv.map_or_else(
         || {
             Ok(json!({
@@ -446,6 +526,7 @@ pub async fn publish_wip(
         },
     )?;
 
+    // Build HTTP request
     let mut req = client
         .client
         .put(&url)
@@ -461,6 +542,7 @@ pub async fn publish_wip(
         .header("file-count", metadata.file_count.to_string())
         .header("project-size", metadata.project_size.to_string());
 
+    // Add custom headers if provided
     if let Some(headers) = headers {
         debug!("Adding custom headers: {:?}", headers);
         for (key, value) in headers {
@@ -468,14 +550,17 @@ pub async fn publish_wip(
         }
     }
 
+    // Create tarball stream and attach to request
     let tar_gz_stream = TarGzStream::new(project_path, 8192)?;
     req = req.body(Body::wrap_stream(tar_gz_stream));
     req = client.apply_auth(req, auth);
 
+    // Send request
     debug!("Sending request to {}", url);
     let res = req.send().await?;
     debug!("Response status: {}", res.status());
 
+    // Check response status
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await?;
@@ -492,6 +577,7 @@ pub async fn publish_wip(
         preview_domain
     );
 
+    // Process response as NDJSON stream
     let stream = res.bytes_stream();
     let config = NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
 
@@ -532,6 +618,13 @@ pub async fn publish_wip(
     }))
 }
 
+/// Builds a gitignore matcher for `.surgeignore` rules.
+///
+/// # Arguments
+/// * `project_path` - Path to the project directory.
+///
+/// # Returns
+/// A `Result` containing a `Gitignore` matcher or a `SurgeError` if the `.surgeignore` file is invalid.
 fn build_custom_gitignore(project_path: &Path) -> Result<ignore::gitignore::Gitignore, SurgeError> {
     let mut ignore_builder = GitignoreBuilder::new(project_path);
     let surgeignore_path = project_path.join(".surgeignore");
