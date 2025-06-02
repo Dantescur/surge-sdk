@@ -10,13 +10,26 @@ keywords = ["surge", "deployment", "static-site", "dns", "ssl"]
 categories = ["api-bindings", "web-programming"]
 rust-version = "1.85.1"
 
+[profile.release]
+debug = true
+
 [lib]
 name = "surge_sdk"
 path = "src/lib.rs"
 
+[[bin]]
+name = "surge"
+path = "src/main.rs"
+
+[features]
+rustls = []
+
 [dependencies]
 # Core HTTP/Async
-reqwest = { version = "0.12.15", features = ["json", "stream"] }
+reqwest = { version = "0.12.15", features = ["json", "stream", "rustls-tls"] }
+rustls = "0.23.27"
+tokio-rustls = "0.26.2"
+webpki-roots = "0.26.11"
 tokio = { version = "1.45.0", features = ["full"] }
 futures-util = "0.3.31"
 
@@ -41,6 +54,8 @@ semver = { version = "1.0.26", features = ["serde"] }
 
 # Runtime
 tokio-util = "0.7.15"
+serde_derive = "1.0.219"
+env_logger = "0.11.8"
 
 [dev-dependencies]
 # Testing
