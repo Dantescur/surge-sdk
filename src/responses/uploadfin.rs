@@ -1,16 +1,17 @@
+/*
+  src/responses/uploadfin.rs
+*/
 use serde::{Deserialize, Serialize};
-
-use super::{Cert, Instance, Metadata, Url};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UploadFinResponse {
     #[serde(rename = "type")]
     pub upload_fin_response_type: String,
     pub config: UploadFinResponseConfig,
-    pub certs: Vec<Cert>,
-    pub metadata: Metadata,
-    pub urls: Vec<Url>,
-    pub instances: Vec<Instance>,
+    // pub certs: Vec<Cert>,
+    // pub metadata: Metadata,
+    // pub urls: Vec<Url>,
+    // pub instances: Vec<Instance>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

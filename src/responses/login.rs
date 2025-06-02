@@ -1,9 +1,6 @@
 /*
   src/responses/login.rs
 */
-/*
-  responses/login.rs
-*/
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

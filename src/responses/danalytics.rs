@@ -1,3 +1,6 @@
+/*
+  src/responses/danalytics.rs
+*/
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

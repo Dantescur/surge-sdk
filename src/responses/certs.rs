@@ -1,26 +1,26 @@
 /*
   src/responses/certs.rs
 */
-use serde::{Deserialize, Serialize};
+use chrono::DateTime;
+use chrono::Utc;
+use serde_derive::Deserialize;
+use serde_derive::Serialize;
 
-use super::Cert;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum CertResponse<T> {
-    Cert(T),
-    Certs(Vec<T>),
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertsResponse {
+    pub certs: Vec<Cert>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DCertsResponse {
-    pub data: CertResponse<Cert>,
-}
-
-impl<T> CertResponse<T> {
-    pub fn as_slice(&self) -> &[T] {
-        match self {
-            CertResponse::Cert(val) => std::slice::from_ref(val),
-            CertResponse::Certs(vals) => vals,
-        }
-    }
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cert {
+    pub subject: String,
+    pub issuer: String,
+    pub not_before: String,
+    pub not_after: DateTime<Utc>,
+    pub exp_in_days: i64,
+    pub subject_alt_names: Vec<String>,
+    pub cert_name: String,
+    pub auto_renew: bool,
 }

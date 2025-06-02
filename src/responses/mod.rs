@@ -1,3 +1,6 @@
+/*
+  src/responses/mod.rs
+*/
 //! # Response Types for Surge API
 //!
 //! This module contains all structured response types returned by the Surge API.
@@ -11,9 +14,12 @@ mod daudit;
 mod list;
 mod login;
 mod manifest;
+mod metadata;
 mod plans;
-mod shared;
+mod settings;
+mod stripe;
 mod uploadfin;
+mod usage;
 
 /// Re-exports the unified error type for response handling.
 pub use crate::error::SurgeError;
@@ -21,11 +27,17 @@ pub use crate::error::SurgeError;
 /// Represents the authenticated user's account information.
 pub use account::AccountResponse;
 
+/// Represents a response containing usage statistics
+pub use usage::UsageResponse;
+
 /// Represents a response containing deployment certificates.
-pub use certs::DCertsResponse;
+pub use certs::{Cert as Certs, CertsResponse};
 
 /// Represents analytics data about deployments or traffic.
 pub use danalytics::DAnalyticsResponse;
+
+/// Represents settings status
+pub use settings::SettingsResponse;
 
 /// Represents deployment audit logs or changes.
 pub use daudit::DAuditResponse;
@@ -42,8 +54,8 @@ pub use manifest::ManifestResponse;
 /// Represents all available plans a user can subscribe to.
 pub use plans::PlansResponse;
 
-/// Shared types and utilities reused across multiple response modules.
-pub use shared::*;
-
 /// Represents the finalization state of an upload process.
 pub use uploadfin::UploadFinResponse;
+
+/// Represents the result of an metadata response.
+pub use metadata::MetadataResponse;
