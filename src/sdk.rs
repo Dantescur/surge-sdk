@@ -39,6 +39,7 @@ use ndjson_stream::{
     fallible::FallibleNdjsonError,
 };
 use serde_json::{Value, json};
+use rustls::{ClientConfig, RootCertStore};
 use std::{fs, path::Path, time::Duration};
 
 use reqwest::Client;
@@ -78,11 +79,29 @@ impl SurgeSdk {
     /// let sdk = SurgeSdk::new(config).unwrap();
     /// ```
     pub fn new(config: Config) -> Result<Self, SurgeError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(config.insecure)
-            .build()
-            .map_err(SurgeError::Http)?;
+        let client = if cfg!(feature = "rustls") {
+            rustls::crypto::ring::default_provider()
+                .install_default()
+                .map_err(|e| SurgeError::Http(format!("Failed to set crypto provider: {:?}", e)))?;
+            let mut root_store = RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let tls_confg = ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+
+            Client::builder()
+                .timeout(Duration::from_secs(config.timeout_secs))
+                .danger_accept_invalid_certs(config.insecure)
+                .use_preconfigured_tls(tls_confg)
+                .build()
+                .map_err(|e| SurgeError::Http(e.to_string()))?
+        } else {
+            Client::builder()
+                .timeout(Duration::from_secs(config.timeout_secs))
+                .danger_accept_invalid_certs(config.insecure)
+                .build()
+                .map_err(|e| SurgeError::Http(e.to_string()))?
+        };
         Ok(Self { config, client })
     }
 
