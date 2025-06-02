@@ -1,3 +1,6 @@
+/*
+  src/sdk.rs
+*/
 //! Surge SDK for interacting with the Surge API.
 //!
 //! This module provides a comprehensive SDK for managing domains, publishing projects, and handling
@@ -32,20 +35,17 @@
 //! # Ok(())
 //! # }
 //! ```
-use futures_util::{Stream, StreamExt};
-use log::{debug, error, info, trace};
-use ndjson_stream::{
-    config::{EmptyLineHandling, NdjsonConfig},
-    fallible::FallibleNdjsonError,
-};
-use serde_json::{Value, json};
+use futures_util::Stream;
+use log::debug;
 use rustls::{ClientConfig, RootCertStore};
+use serde_json::Value;
 use std::{fs, path::Path, time::Duration};
 
 use reqwest::Client;
 
 use crate::{
-    DCertsResponse, ListResponse,
+    CertsResponse, DAnalyticsResponse, DAuditResponse, ListResponse, ManifestResponse,
+    MetadataResponse, PlansResponse, UsageResponse,
     config::Config,
     error::SurgeError,
     responses::{AccountResponse, LoginResponse},
@@ -83,8 +83,10 @@ impl SurgeSdk {
             rustls::crypto::ring::default_provider()
                 .install_default()
                 .map_err(|e| SurgeError::Http(format!("Failed to set crypto provider: {:?}", e)))?;
+
             let mut root_store = RootCertStore::empty();
             root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
             let tls_confg = ClientConfig::builder()
                 .with_root_certificates(root_store)
                 .with_no_client_auth();
@@ -102,6 +104,7 @@ impl SurgeSdk {
                 .build()
                 .map_err(|e| SurgeError::Http(e.to_string()))?
         };
+
         Ok(Self { config, client })
     }
 
@@ -133,15 +136,21 @@ impl SurgeSdk {
         &self,
         domain: Option<&str>,
         auth: &Auth,
-    ) -> Result<ListResponse, SurgeError> {
+    ) -> Result<Vec<ListResponse>, SurgeError> {
         let path = match domain {
             Some(d) => format!("{}/list", d),
             None => "list".to_string(),
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to list: {:#?}", req);
+
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+
+        let list_response: Vec<ListResponse> = serde_json::from_str(&body_text)?;
+        Ok(list_response)
     }
 
     /// Deletes the account.
@@ -154,7 +163,10 @@ impl SurgeSdk {
     pub async fn nuke(&self, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("account")?;
         let req = self.apply_auth(self.client.delete(url), auth);
-        req.send().await?;
+        debug!("Request sent to nuke: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -169,9 +181,12 @@ impl SurgeSdk {
     pub async fn teardown(&self, domain: &str, auth: &Auth) -> Result<bool, SurgeError> {
         let url = self.config.endpoint.join(domain)?;
         let req = self.apply_auth(self.client.delete(url), auth);
+        debug!("Request sent to teardown: {:#?}", &req);
         let response = req.send().await?;
-
-        Ok(response.status().is_success())
+        let status = response.status();
+        let body_text = response.text().await?;
+        debug!("response raw: {:?}", body_text);
+        Ok(status.is_success())
     }
 
     /// Logs in to the API.
@@ -184,8 +199,12 @@ impl SurgeSdk {
     pub async fn login(&self, auth: &Auth) -> Result<LoginResponse, SurgeError> {
         let url = self.config.endpoint.join("token")?;
         let req = self.apply_auth(self.client.post(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to login: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let login_response: LoginResponse = serde_json::from_str(&body_text)?;
+        Ok(login_response)
     }
 
     /// Publishes a project directory to a domain.
@@ -247,7 +266,10 @@ impl SurgeSdk {
     pub async fn rollback(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollback", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
-        req.send().await?;
+        debug!("Request sent to rollback: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -262,7 +284,10 @@ impl SurgeSdk {
     pub async fn rollfore(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollfore", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
-        req.send().await?;
+        debug!("Request sent to rollfore: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -287,7 +312,10 @@ impl SurgeSdk {
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.put(url), auth);
-        req.send().await?;
+        debug!("Request sent to cutover: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -312,7 +340,10 @@ impl SurgeSdk {
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.delete(url), auth);
-        req.send().await?;
+        debug!("Request sent to discard: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -324,11 +355,15 @@ impl SurgeSdk {
     ///
     /// # Returns
     /// A `Result` containing a `DCertsResponse` or a `SurgeError`.
-    pub async fn certs(&self, domain: &str, auth: &Auth) -> Result<DCertsResponse, SurgeError> {
+    pub async fn certs(&self, domain: &str, auth: &Auth) -> Result<CertsResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/certs", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to certs: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let certs_response: CertsResponse = serde_json::from_str(&body_text)?;
+        Ok(certs_response)
     }
 
     /// Fetches metadata for a domain or specific revision.
@@ -339,21 +374,25 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
+    /// A `Result` containing a `MetadataResponse` or a `SurgeError`.
     pub async fn metadata(
         &self,
         domain: &str,
         revision: Option<&str>,
         auth: &Auth,
-    ) -> Result<Value, SurgeError> {
+    ) -> Result<MetadataResponse, SurgeError> {
         let path = match revision {
             Some(rev) => format!("{}/{}/metadata.json", domain, rev),
             None => format!("{}/metadata.json", domain),
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to metadata: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let metadata_response: MetadataResponse = serde_json::from_str(&body_text)?;
+        Ok(metadata_response)
     }
 
     /// Fetches the manifest for a domain or specific revision.
@@ -364,21 +403,25 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
+    /// A `Result` containing a `ManifestResponse` or a `SurgeError`.
     pub async fn manifest(
         &self,
         domain: &str,
         revision: Option<&str>,
         auth: &Auth,
-    ) -> Result<Value, SurgeError> {
+    ) -> Result<ManifestResponse, SurgeError> {
         let path = match revision {
             Some(rev) => format!("{}/{}/manifest.json", domain, rev),
             None => format!("{}/manifest.json", domain),
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to manifest: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let manifest_response: ManifestResponse = serde_json::from_str(&body_text)?;
+        Ok(manifest_response)
     }
 
     /// Fetches the file manifest for a domain (alias for `manifest` with no revision).
@@ -389,7 +432,7 @@ impl SurgeSdk {
     ///
     /// # Returns
     /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
-    pub async fn files(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
+    pub async fn files(&self, domain: &str, auth: &Auth) -> Result<ManifestResponse, SurgeError> {
         self.manifest(domain, None, auth).await
     }
 
@@ -410,7 +453,10 @@ impl SurgeSdk {
     ) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/settings", domain))?;
         let req = self.apply_auth(self.client.put(url), auth).json(&settings);
-        req.send().await?;
+        debug!("Request sent to config: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -425,8 +471,12 @@ impl SurgeSdk {
     pub async fn dns(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/dns", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to dns: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let dns_response: Value = serde_json::from_str(&body_text)?;
+        Ok(dns_response)
     }
 
     /// Adds a DNS record for a domain.
@@ -446,7 +496,10 @@ impl SurgeSdk {
     ) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/dns", domain))?;
         let req = self.apply_auth(self.client.post(url), auth).json(&record);
-        req.send().await?;
+        debug!("Request sent to dns_add: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -465,7 +518,10 @@ impl SurgeSdk {
             .endpoint
             .join(&format!("{}/dns/{}", domain, id))?;
         let req = self.apply_auth(self.client.delete(url), auth);
-        req.send().await?;
+        debug!("Request sent to dns_remove: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -480,8 +536,12 @@ impl SurgeSdk {
     pub async fn zone(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/zone", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to zone: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let zone_response: Value = serde_json::from_str(&body_text)?;
+        Ok(zone_response)
     }
 
     /// Adds a zone record for a domain.
@@ -501,7 +561,10 @@ impl SurgeSdk {
     ) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/zone", domain))?;
         let req = self.apply_auth(self.client.post(url), auth).json(&record);
-        req.send().await?;
+        debug!("Request sent to zone_add: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -520,7 +583,10 @@ impl SurgeSdk {
             .endpoint
             .join(&format!("{}/zone/{}", domain, id))?;
         let req = self.apply_auth(self.client.delete(url), auth);
-        req.send().await?;
+        debug!("Request sent to zone_remove: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -535,7 +601,10 @@ impl SurgeSdk {
     pub async fn bust(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/cache", domain))?;
         let req = self.apply_auth(self.client.delete(url), auth);
-        req.send().await?;
+        debug!("Request sent to bust: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -549,8 +618,12 @@ impl SurgeSdk {
     pub async fn stats(&self, auth: &Auth) -> Result<Value, SurgeError> {
         let url = self.config.endpoint.join("stats")?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to stats: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let stats_response: Value = serde_json::from_str(&body_text)?;
+        Ok(stats_response)
     }
 
     /// Fetches analytics data for a domain.
@@ -560,15 +633,23 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
-    pub async fn analytics(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
+    /// A `Result` containing a `DAnalyticsResponse` or a `SurgeError`.
+    pub async fn analytics(
+        &self,
+        domain: &str,
+        auth: &Auth,
+    ) -> Result<DAnalyticsResponse, SurgeError> {
         let url = self
             .config
             .endpoint
             .join(&format!("{}/analytics", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to analytics: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let analytics_response: DAnalyticsResponse = serde_json::from_str(&body_text)?;
+        Ok(analytics_response)
     }
 
     /// Fetches usage data for a domain.
@@ -578,12 +659,16 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
-    pub async fn usage(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
+    /// A `Result` containing a `UsageResponse` or a `SurgeError`.
+    pub async fn usage(&self, domain: &str, auth: &Auth) -> Result<UsageResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/usage", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to usage: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let usage_response = serde_json::from_str(&body_text)?;
+        Ok(usage_response)
     }
 
     /// Fetches audit logs for a domain.
@@ -593,12 +678,16 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
-    pub async fn audit(&self, domain: &str, auth: &Auth) -> Result<Value, SurgeError> {
+    /// A `Result` containing a `DAuditResponse` or a `SurgeError`.
+    pub async fn audit(&self, domain: &str, auth: &Auth) -> Result<DAuditResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/audit", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
+        debug!("Request sent to audit: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let audit_response = serde_json::from_str(&body_text)?;
+        Ok(audit_response)
     }
 
     /// Invites collaborators to a domain.
@@ -616,7 +705,10 @@ impl SurgeSdk {
             .endpoint
             .join(&format!("{}/collaborators", domain))?;
         let req = self.apply_auth(self.client.post(url), auth).json(&emails);
-        req.send().await?;
+        debug!("Request sent to invite: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -635,7 +727,10 @@ impl SurgeSdk {
             .endpoint
             .join(&format!("{}/collaborators", domain))?;
         let req = self.apply_auth(self.client.delete(url), auth).json(&emails);
-        req.send().await?;
+        debug!("Request sent to revoke: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -650,7 +745,10 @@ impl SurgeSdk {
     pub async fn plan(&self, plan: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("plan")?;
         let req = self.apply_auth(self.client.put(url), auth).json(&plan);
-        req.send().await?;
+        debug!("Request sent to plan: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -665,7 +763,10 @@ impl SurgeSdk {
     pub async fn card(&self, card: Value, auth: &Auth) -> Result<(), SurgeError> {
         let url = self.config.endpoint.join("card")?;
         let req = self.apply_auth(self.client.put(url), auth).json(&card);
-        req.send().await?;
+        debug!("Request sent to card: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
@@ -676,130 +777,24 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `serde_json::Value` or a `SurgeError`.
-    pub async fn plans(&self, domain: Option<&str>, auth: &Auth) -> Result<Value, SurgeError> {
+    /// A `Result` containing a `PlansResponse` or a `SurgeError`.
+    pub async fn plans(
+        &self,
+        domain: Option<&str>,
+        auth: &Auth,
+    ) -> Result<PlansResponse, SurgeError> {
         let path = match domain {
             Some(d) => format!("{}/plans", d),
             None => "plans".to_string(),
         };
         let url = self.config.endpoint.join(&path)?;
         let req = self.apply_auth(self.client.get(url), auth);
-        let res = req.send().await?.json().await?;
-        Ok(res)
-    }
-
-    /// Requests SSL encryption for a domain.
-    ///
-    /// # Arguments
-    /// * `domain` - The target domain.
-    /// * `auth` - Authentication credentials.
-    /// * `headers` - Optional custom HTTP headers.
-    /// * `argv` - Optional command-line arguments.
-    ///
-    /// # Returns
-    /// A `Result` containing a stream of `Event`s or a `SurgeError`.
-    pub async fn encrypt(
-        &self,
-        domain: &str,
-        auth: &Auth,
-        headers: Option<Vec<(String, String)>>,
-        argv: Option<&[String]>,
-    ) -> Result<impl Stream<Item = Result<Event, SurgeError>>, SurgeError> {
-        info!("Encrypting domain: {}", domain);
-        let url = self.config.endpoint.join(&format!("{}/encrypt", domain))?;
-        debug!("URL: {}", url);
-
-        let timestamp = chrono::Utc::now().to_rfc3339();
-        let argv_json = argv.map_or_else(
-            || {
-                Ok(json!({
-                    "_": [],
-                    "e": self.config.endpoint.as_str(),
-                    "endpoint": self.config.endpoint.as_str(),
-                })
-                .to_string())
-            },
-            |args| {
-                serde_json::to_string(&json!({
-                    "_": args,
-                    "e": self.config.endpoint.as_str(),
-                    "endpoint": self.config.endpoint.as_str(),
-                }))
-            },
-        )?;
-
-        let mut req = self
-            .client
-            .put(url)
-            .header("Accept", "application/ndjson")
-            .header("version", &self.config.version)
-            .header("timestamp", timestamp)
-            .header("argv", argv_json);
-
-        if let Some(headers) = headers {
-            debug!("Adding custom headers: {:?}", headers);
-            for (key, value) in headers {
-                req = req.header(&key, value);
-            }
-        }
-
-        req = self.apply_auth(req, auth);
-
-        debug!("Sending encrypt request");
+        debug!("Request sent to plans: {:#?}", req);
         let res = req.send().await?;
-        debug!("Response status: {}", res.status());
-
-        if !res.status().is_success() {
-            let status = res.status();
-            let text = res.text().await?;
-            error!("Encrypt failed with status {}: {}", status, text);
-            return Err(SurgeError::Api(crate::error::ApiError {
-                errors: vec![format!("Encrypt failed with status: {}", status)],
-                details: Value::Object(serde_json::Map::new()),
-                status: Some(status.as_u16()),
-            }));
-        }
-
-        info!("Encrypt request sent for domain: {}", domain);
-
-        let stream = res.bytes_stream();
-        let config =
-            NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
-
-        let stream = stream.map(|result| {
-            result.map_err(SurgeError::from).and_then(|bytes| {
-                trace!("Received {} bytes", bytes.len());
-                String::from_utf8(bytes.to_vec()).map_err(|e| {
-                    error!("UTF-8 error: {}", e);
-                    SurgeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-                })
-            })
-        });
-
-        let ndjson_stream = ndjson_stream::from_fallible_stream_with_config(stream, config);
-
-        Ok(ndjson_stream.map(|result: Result<Event, _>| match result {
-            Ok(event) => {
-                debug!("Parsed event: {:?}", event);
-                if event.event_type == *"error" || event.data.to_string().contains("error") {
-                    error!("Server error: {:?}", event);
-                    Err(SurgeError::EventError(event))
-                } else if event.event_type == *"info" {
-                    info!("Success indicator received");
-                    Ok(event)
-                } else {
-                    Ok(event)
-                }
-            }
-            Err(FallibleNdjsonError::JsonError(e)) => {
-                error!("JSON parsing error: {}", e);
-                Err(SurgeError::Json(e))
-            }
-            Err(FallibleNdjsonError::InputError(e)) => {
-                error!("Stream error: {:?}", e);
-                Err(SurgeError::Io(std::io::Error::other(e.to_string())))
-            }
-        }))
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
+        let plans_response: PlansResponse = serde_json::from_str(&body_text)?;
+        Ok(plans_response)
     }
 
     /// Uploads an SSL certificate for a domain.
@@ -812,10 +807,13 @@ impl SurgeSdk {
     /// # Returns
     /// A `Result` indicating success or a `SurgeError`.
     pub async fn ssl(&self, domain: &str, pem_path: &Path, auth: &Auth) -> Result<(), SurgeError> {
-        let pem_data = fs::read(pem_path).map_err(|e| SurgeError::Io(std::io::Error::other(e)))?;
+        let pem_data = fs::read(pem_path).map_err(|e| SurgeError::Io(e.to_string()))?;
         let url = self.config.endpoint.join(&format!("{}/certs", domain))?;
         let req = self.apply_auth(self.client.post(url), auth).body(pem_data);
-        req.send().await?;
+        debug!("Request sent to ssl: {:#?}", req);
+        let res = req.send().await?;
+        let body_text = res.text().await?;
+        debug!("response raw: {:?}", body_text);
         Ok(())
     }
 
