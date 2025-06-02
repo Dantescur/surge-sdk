@@ -1,3 +1,6 @@
+/*
+  src/config.rs
+*/
 //! Configuration module for the Surge SDK.
 //!
 //! Provides the `Config` struct used to configure SDK behavior including:
@@ -66,6 +69,9 @@ impl Config {
     }
 
     /// Sets the `insecure` flag to allow or disallow insecure connections.
+    ///
+    /// **Warning**: Enabling `insecure` (setting to `true`) disables TLS verification,
+    /// which can expose your application to man-in-the-middle attacks. Use only for testing.
     ///
     /// # Arguments
     /// * `val` - Whether to enable insecure connections.
