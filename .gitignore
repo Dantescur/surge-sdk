@@ -1,1 +1,4 @@
 /target
+encrypt.json
+usage.json
+src/main.rs
