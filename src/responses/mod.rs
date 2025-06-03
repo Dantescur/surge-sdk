@@ -11,13 +11,16 @@ mod account;
 mod certs;
 mod danalytics;
 mod daudit;
+mod discard;
 mod list;
 mod login;
 mod manifest;
 mod metadata;
 mod plans;
+mod roll;
 mod settings;
 mod stripe;
+mod teardown;
 mod uploadfin;
 mod usage;
 
@@ -43,10 +46,16 @@ pub use settings::SettingsResponse;
 pub use daudit::DAuditResponse;
 
 /// Represents the list of deployments, including associated plans.
-pub use list::ListResponse;
+pub use list::{ListDomainResponse, ListResponse, ListResult};
+
+/// Represents a discard response result
+pub use discard::DiscardResponse;
 
 /// Represents the result of a login operation, typically containing tokens or session info.
 pub use login::LoginResponse;
+
+/// Represents the result of rolling back a rev
+pub use roll::RollResponse;
 
 /// Represents the deployment manifest returned after a successful upload or update.
 pub use manifest::ManifestResponse;
@@ -56,6 +65,9 @@ pub use plans::PlansResponse;
 
 /// Represents the finalization state of an upload process.
 pub use uploadfin::UploadFinResponse;
+
+/// Represents a teardown response
+pub use teardown::TeardownResponse;
 
 /// Represents the result of an metadata response.
 pub use metadata::MetadataResponse;

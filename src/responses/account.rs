@@ -17,10 +17,10 @@ pub struct AccountResponse {
     #[serde(rename = "created_at")]
     pub created_at: String,
     #[serde(rename = "payment_id")]
-    pub payment_id: String,
+    pub payment_id: Option<String>,
     #[serde(rename = "email_verified_at")]
     pub email_verified_at: Value,
-    pub stripe: Stripe,
+    pub stripe: Option<Stripe>,
     pub plan: Plan,
     pub card: Value,
 }

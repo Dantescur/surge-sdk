@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value; // For the flexible "output" field
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MetadataResponse {
     pub rev: i64,
     pub cmd: String,
@@ -16,7 +17,7 @@ pub struct MetadataResponse {
     pub message: Option<String>,    // Nullable field
     pub build_time: Option<String>, // Nullable field
     pub ip: String,
-    pub private_file_list: Vec<Value>, // Adjust if you know the specific type
+    pub private_file_list: Vec<Value>,
     pub public_file_count: i32,
     pub public_total_size: i32,
     pub private_file_count: i32,
