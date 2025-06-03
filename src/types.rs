@@ -19,20 +19,39 @@
 //! API responses.
 //!
 //! # Example
-//! ```
-//! use surge_sdk::types::{Auth, Event};
+//! ```rust,no_run
+//! use surge_sdk::types::{Auth,Event};
+//! use surge_sdk::{Config, SurgeSdk, SurgeError};
 //! use serde_json::json;
+//! use futures_util::StreamExt;
 //!
 //! // Example of creating authentication credentials
-//! let auth = Auth::Token("your-api-token".to_string());
+//! #[tokio::main]
+//! async fn main() -> Result<(), SurgeError> {
 //!
-//! // Example of creating an event
-//! let event = Event {
-//!     event_type: "info".to_string(),
-//!     data: json!({ "message": "Operation successful" }),
-//! };
-//! println!("{}", event); // Outputs: [Event: info] { "message": "Operation successful" }
-//! ```
+//! let auth = Auth::Token("your-api-token".to_string());
+//! let domain = "test.surge.sh";
+//!
+//! let config = Config::new("https://surge-surge-sh-ac3knfxv0vee.curlhub.io/", "0.1.0")
+//!       .unwrap()
+//!      .with_insecure(true);
+//!  let sdk = SurgeSdk::new(config)?;
+//!
+//!
+//! // Example of reading an event
+//! let mut stream = sdk
+//!  .publish(std::path::Path::new("./dist"), &domain, &auth, None, None)
+//!         .await?;
+//! while let Some(event) = stream.next().await {
+//!      match event {
+//!           Ok(event) => println!("Event: {}", event),
+//! Err(e) => eprintln!("Error: {}", e),
+//!      }
+//!  }
+//!  Ok(())
+//! }
+//!```
+//!
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
