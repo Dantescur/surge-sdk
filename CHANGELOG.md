@@ -5,12 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1-alpha.2] - 2025-05-30
+## [0.1.1-alpha.2] - 2025-06-03
+
+### Added
+
+- Added missing response handlers and updated login checks
+- Add file banner
+- Added and enhanced missing or wrong response types
+- Added rustls deps and better integration to flamegraph
+- Support for rustls via feature flag
+- Added warning for use of insecure flags
+- Added CNAME for automatic domain detection
 
 ### Changed
 
+- Reduced duplicated code boilerplate
+- Improved example for Event enum
+- Exluded some trash files i have locallly
+- Better ndjson event handling
+- Better debugginh and response types
+- Release surge-sdk version 0.1.1-alpha.2
 - Another iteration over responses
 - Set msrv
+
+### Fixed
+
+- Switched test to match new response
+- Updated test
+- Better errors
+- Provided more detailed response types
+- Match with new responses
 
 ## [0.1.1-alpha.1] - 2025-05-30
 
