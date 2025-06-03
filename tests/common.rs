@@ -1,3 +1,6 @@
+/*
+  tests/common.rs
+*/
 use surge_sdk::{Config, SurgeSdk};
 
 pub struct TestServer {

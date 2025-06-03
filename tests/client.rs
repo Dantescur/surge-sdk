@@ -65,7 +65,10 @@ async fn test_login_failure() {
         })
         .await;
 
-    assert!(matches!(result, Err(SurgeError::Http(_))));
+    assert!(matches!(
+        result,
+        Err(SurgeError::Api { .. }) | Err(SurgeError::Http(_))
+    ));
 }
 
 #[tokio::test]
@@ -127,17 +130,7 @@ async fn test_list_no_domain() {
         .with_body(
             json!([{
                 "domain": "test.surge.sh",
-                "planName": {
-                    "name": "Standard",
-                    "id": "3",
-                    "amount": 22,
-                    "friendly": "yes",
-                    "dummy": false,
-                    "current": true,
-                    "metadata": {
-                        "type": "info",
-                        "extra": "tired"
-                }},
+                "planName": "Plus",
                 "rev": 123456,
                 "cmd": "surge",
                 "email": "test@example.com",
@@ -152,6 +145,7 @@ async fn test_list_no_domain() {
                 "publicFileCount": 5,
                 "publicTotalSize": 1000,
                 "privateFileCount": 5,
+                "plansuploadDuratiod": 5,
                 "privateTotalSize": 1000,
                 "uploadStartTime": 1234567890,
                 "uploadEndTime": 1234567891,
@@ -170,8 +164,13 @@ async fn test_list_no_domain() {
         .await
         .unwrap();
 
-    assert_eq!(response.len(), 1);
-    assert_eq!(response[0].domain, "test.surge.sh");
+    let list_response = match response {
+        surge_sdk::ListResult::Global(list_responses) => list_responses,
+        surge_sdk::ListResult::Domain(_) => panic!("No"),
+    };
+
+    assert_eq!(list_response.len(), 1);
+    assert_eq!(list_response[0].domain, "test.surge.sh");
 }
 
 #[tokio::test]
@@ -181,6 +180,196 @@ async fn test_teardown_success() {
         .server
         .mock("DELETE", "/test.surge.sh")
         .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            json!({
+                "msg": "project removed",
+                "nsDomain": "surge.world",
+                "instances": [
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "sfo.surgel.sh",
+                        "location": "US, San Francisco",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "138.197.235.123",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "lhr.surgel.sh",
+                        "location": "GB, London",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "46.101.67.123",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "yyz.surgel.sh",
+                        "location": "CA, Toronto",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "159.203.50.177",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "jfk.surgel.sh",
+                        "location": "US, New York",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "159.203.159.100",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "ams.surgel.sh",
+                        "location": "NL, Amsterdam",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "188.166.132.94",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "fra.surgel.sh",
+                        "location": "DE, Frankfurt",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "138.68.112.220",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "sgp.surgel.sh",
+                        "location": "SG, Singapore",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "139.59.195.30",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "D.Ocean",
+                        "domain": "blr.surgel.sh",
+                        "location": "IN, Bangalore",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "139.59.50.135",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "Vultr",
+                        "domain": "syd.surgel.sh",
+                        "location": "AU, Sydney",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "45.76.126.95",
+                        "info": "available"
+                    },
+                    {
+                        "type": "HTTP",
+                        "provider": "Linode",
+                        "domain": "nrt.surgel.sh",
+                        "location": "JP, Tokyo",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "172.104.96.133",
+                        "info": "available"
+                    },
+                    {
+                        "type": "NS",
+                        "provider": "D.Ocean",
+                        "domain": "ns1.surge.world",
+                        "location": "US, San Francisco",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "N/A",
+                        "info": "available"
+                    },
+                    {
+                        "type": "NS",
+                        "provider": "D.Ocean",
+                        "domain": "ns2.surge.world",
+                        "location": "GB, London",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "N/A",
+                        "info": "available"
+                    },
+                    {
+                        "type": "NS",
+                        "provider": "D.Ocean",
+                        "domain": "ns3.surge.world",
+                        "location": "CA, Toronto",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "N/A",
+                        "info": "available"
+                    },
+                    {
+                        "type": "NS",
+                        "provider": "D.Ocean",
+                        "domain": "ns4.surge.world",
+                        "location": "US, New York",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green",
+                        "ip": "N/A",
+                        "info": "available"
+                    },
+                    {
+                        "type": "CNAME",
+                        "provider": null,
+                        "domain": "geo.surge.world",
+                        "location": "⬤ , Any/All",
+                        "ip": "N/A",
+                        "info": "available",
+                        "status": "◍",
+                        "statusColor": "green",
+                        "confirmation": "✔",
+                        "confirmationColor": "green"
+                    }
+                ]
+            })
+            .to_string(),
+        )
         .create_async()
         .await;
 
@@ -190,7 +379,10 @@ async fn test_teardown_success() {
         .await
         .unwrap();
 
-    assert!(result);
+    assert_eq!(result.msg, "project removed");
+    assert_eq!(result.ns_domain, "surge.world");
+    assert_eq!(result.instances.len(), 15);
+    assert_eq!(result.instances[0].domain, "sfo.surgel.sh");
 }
 
 #[tokio::test]
