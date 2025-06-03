@@ -1,3 +1,6 @@
+/*
+  src/utils.rs
+*/
 //! Module for utility functions in the Surge SDK.
 //!
 //! This module provides helper functions for generating random domain names and converting JSON
