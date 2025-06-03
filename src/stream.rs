@@ -1,3 +1,6 @@
+/*
+  src/stream.rs
+*/
 //! Module for streaming project publishing functionality in the Surge SDK.
 //!
 //! This module provides utilities for publishing project directories to the Surge API by creating
@@ -42,7 +45,7 @@
 use crate::{
     error::SurgeError,
     sdk::SurgeSdk,
-    types::{Auth, Event},
+    types::{Auth, Event, RawEvent},
 };
 use bytes::Bytes;
 use flate2::{Compression, write::GzEncoder};
@@ -109,58 +112,58 @@ pub struct StreamMetadata {
 pub fn calculate_metadata(project_path: &Path) -> Result<StreamMetadata, SurgeError> {
     debug!("Calculating metadata for path: {:?}", project_path);
 
-    // Validate that the path is a directory
     if !project_path.is_dir() {
         error!("Project path {:?} is not a directory", project_path);
-        return Err(SurgeError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Invalid project directory",
+        return Err(SurgeError::Io(format!(
+            "Invalid project directory: {}",
+            project_path.display()
         )));
     }
 
-    // Build gitignore rules for filtering
     let gitignore = build_custom_gitignore(project_path)?;
 
-    // Set up parallel di traversal
     let walker = WalkBuilder::new(project_path)
-        .standard_filters(false) // Disable default .gitignore filters
+        .standard_filters(false)
         .build_parallel();
 
-    // Channel for ccollecting directoty entries
     let (tx, rx) = std::sync::mpsc::channel();
+    let worker_tx = tx.clone();
 
-    // Run the directory walker
     walker.run(move || {
-        let tx = tx.clone();
+        // Use the cloned sender in the worker threads
+        let tx = worker_tx.clone();
         let gitignore = gitignore.clone();
 
         Box::new(move |result| {
             match result {
                 Ok(entry) => {
                     let path = entry.path();
-                    // Check if the path is ignored
                     let matched = gitignore.matched_path_or_any_parents(path, path.is_dir());
                     if !matched.is_ignore() {
-                        tx.send(entry).ok(); // Send non-ignored entries
-                    };
+                        tx.send(entry).ok();
+                    }
                 }
                 Err(err) => {
                     error!("Walker error: {:?}", err);
+                    // Cannot send errors directly due to channel limitations
                 }
             }
             ignore::WalkState::Continue
         })
     });
 
+    drop(tx); // Important for proper channel closure
+
     let mut file_count = 0;
     let mut project_size = 0;
 
-    // Process entries for calculate metadata
     for entry in rx {
         let path = entry.path();
         trace!("Processing file for metadata: {:?}", path);
         if path.is_file() {
-            let metadata = fs::metadata(path).map_err(SurgeError::Io)?;
+            let metadata = fs::metadata(path).map_err(|e| {
+                SurgeError::Io(format!("Failed to get metadata for {:?}: {}", path, e))
+            })?;
             file_count += 1;
             project_size += metadata.len();
             debug!("Counted file: {:?}: {} bytes", path, metadata.len());
@@ -193,9 +196,9 @@ impl TarGzStream {
         // Validate that the path is a directory
         if !project_path.is_dir() {
             error!("Project path {:?}: is not a directory", project_path);
-            return Err(SurgeError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid project directory",
+            return Err(SurgeError::Io(format!(
+                "Invalid project directory: {}",
+                project_path.display()
             )));
         }
 
@@ -227,7 +230,7 @@ impl TarGzStream {
                     .build();
 
                 for entry in walker {
-                    let entry = entry.map_err(SurgeError::IgnoreError)?;
+                    let entry = entry.map_err(|e| SurgeError::Ignore(e.to_string()))?;
                     let path = entry.path();
 
                     // Skip ignored files or non-files
@@ -247,17 +250,12 @@ impl TarGzStream {
                         // Compute relative path for tar
                         let rel_path = path
                             .strip_prefix(project_path.parent().unwrap_or(Path::new("")))
-                            .map_err(|e| {
-                                SurgeError::Io(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    e.to_string(),
-                                ))
-                            })?;
+                            .map_err(|e| SurgeError::InvalidProject(e.to_string()))?;
                         // Get file_name and handle None case
                         let file_name = rel_path.file_name().ok_or_else(|| {
-                            SurgeError::Io(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("No file name for path: {}", path.display()),
+                            SurgeError::InvalidProject(format!(
+                                "No file name for path: {}",
+                                path.display()
                             ))
                         })?;
 
@@ -283,9 +281,10 @@ impl TarGzStream {
                         header.set_cksum();
 
                         // Add file to tar
-                        let mut file = File::open(path)?;
+                        let mut file =
+                            File::open(path).map_err(|e| SurgeError::Io(e.to_string()))?;
                         tar.append_data(&mut header, &tar_path, &mut file)
-                            .map_err(|e| SurgeError::Io(std::io::Error::other(e.to_string())))?;
+                            .map_err(|e| SurgeError::Io(e.to_string()))?;
                     }
                 }
 
@@ -340,9 +339,10 @@ impl Stream for TarGzStream {
                     error!("Task panicked: {}", e);
                     self.task = None; // Clear the task
                     self.done = true;
-                    return std::task::Poll::Ready(Some(Err(SurgeError::Io(
-                        std::io::Error::other(e.to_string()),
-                    ))));
+                    return std::task::Poll::Ready(Some(Err(SurgeError::Io(format!(
+                        "Task panicked: {}",
+                        e
+                    )))));
                 }
             }
         }
@@ -356,7 +356,7 @@ impl Stream for TarGzStream {
             std::task::Poll::Ready(Some(Err(e))) => {
                 error!("Stream read error: {}", e);
                 self.done = true;
-                std::task::Poll::Ready(Some(Err(SurgeError::Io(e))))
+                std::task::Poll::Ready(Some(Err(SurgeError::Io(e.to_string()))))
             }
             std::task::Poll::Ready(None) => {
                 debug!("Stream is complete");
@@ -391,127 +391,7 @@ pub async fn publish(
     headers: Option<Vec<(String, String)>>,
     argv: Option<&[String]>,
 ) -> Result<impl Stream<Item = Result<Event, SurgeError>>, SurgeError> {
-    info!("Publishing to domain: {}", domain);
-    debug!("Project path: {:?}", project_path);
-
-    // Construct the target URL
-    let url = format!("{}{}", client.config.endpoint, domain);
-    debug!("URL: {}", url);
-
-    // Calculate project metadata
-    let metadata = calculate_metadata(project_path)?;
-    let timestamp = chrono::Utc::now().to_rfc3339();
-
-    // Serialize argv as JSON
-    let argv_json = argv.map_or_else(
-        || {
-            Ok(json!({
-                "_": [],
-                "e": client.config.endpoint.as_str(),
-                "endpoint": client.config.endpoint.as_str(),
-                "s": false,
-                "stage": false
-            })
-            .to_string())
-        },
-        |args| {
-            serde_json::to_string(&json!({
-                "_": args,
-                "e": client.config.endpoint.as_str(),
-                "endpoint": client.config.endpoint.as_str(),
-                "s": false,
-                "stage": false
-            }))
-        },
-    )?;
-
-    // Build HTTP request
-    let mut req = client
-        .client
-        .put(&url)
-        .header("Content-Type", "application/gzip")
-        .header("Accept", "application/ndjson")
-        .header("version", &client.config.version)
-        .header("timestamp", timestamp)
-        .header("stage", "false")
-        .header("ssl", "null")
-        .header("argv", argv_json);
-
-    req = req
-        .header("file-count", metadata.file_count.to_string())
-        .header("project-size", metadata.project_size.to_string());
-
-    // Add custom headers if provided
-    if let Some(headers) = headers {
-        debug!("Adding custom headers: {:?}", headers);
-        for (key, value) in headers {
-            req = req.header(&key, value);
-        }
-    }
-
-    // Create tarball stream and attach to request
-    let tar_gz_stream = TarGzStream::new(project_path, 8192)?;
-    req = req.body(Body::wrap_stream(tar_gz_stream));
-    req = client.apply_auth(req, auth);
-
-    // Send request
-    debug!("Sending request to {}", url);
-    let res = req.send().await?;
-    debug!("Response status: {}", res.status());
-
-    // Check response status
-    if !res.status().is_success() {
-        let status = res.status();
-        let text = res.text().await?;
-        error!("Request failed with status {}: {}", status, text);
-        return Err(SurgeError::Api(crate::error::ApiError {
-            errors: vec![format!("Request failed with status: {}", status)],
-            details: Value::Object(serde_json::Map::new()),
-            status: Some(status.as_u16()),
-        }));
-    }
-
-    info!("Successfully uploaded tarball for domain: {}", domain);
-
-    // Process response as NDJSON stream
-    let stream = res.bytes_stream();
-    let config = NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
-
-    let stream = stream.map(|result| {
-        result.map_err(SurgeError::from).and_then(|bytes| {
-            trace!("Received {} bytes", bytes.len());
-            String::from_utf8(bytes.to_vec()).map_err(|e| {
-                error!("UTF-8 error: {}", e);
-                SurgeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            })
-        })
-    });
-
-    let ndjson_stream = ndjson_stream::from_fallible_stream_with_config(stream, config);
-
-    Ok(ndjson_stream.map(|result: Result<Event, _>| match result {
-        Ok(event) => {
-            debug!("Parsed event: {:?}", event);
-            println!("Event: {:?}", event); // Added for debugging
-            if event.event_type == *"error" || event.data.to_string().contains("error") {
-                error!("Server error: {:?}", event);
-                Err(SurgeError::EventError(event))
-            } else if event.event_type == *"info" {
-                info!("Success indicator received");
-                Ok(event)
-            } else {
-                Ok(event)
-            }
-        }
-        Err(FallibleNdjsonError::JsonError(e)) => {
-            error!("JSON parsing error: {}", e);
-            Err(SurgeError::Json(e))
-        }
-        Err(FallibleNdjsonError::InputError(e)) => {
-            error!("Stream error: {:?}", e);
-            Err(SurgeError::Io(std::io::Error::other(e.to_string())))
-        }
-    }))
+    publish_common(client, project_path, domain, auth, headers, argv, false).await
 }
 
 /// Publishes a work-in-progress (WIP) version of a project to a preview domain.
@@ -534,131 +414,7 @@ pub async fn publish_wip(
     headers: Option<Vec<(String, String)>>,
     argv: Option<&[String]>,
 ) -> Result<impl Stream<Item = Result<Event, SurgeError>>, SurgeError> {
-    info!("Publishing WIP to domain: {}", domain);
-    debug!("Project path: {:?}", project_path);
-
-    // Create a unique preview domain
-    let preview_domain = format!("{}-{}", chrono::Utc::now().timestamp_millis(), domain);
-    let url = format!("{}{}", client.config.endpoint, preview_domain);
-    debug!("Preview URL: {}", url);
-
-    // Calculate project metadata
-    let metadata = calculate_metadata(project_path)?;
-    let timestamp = chrono::Utc::now().to_rfc3339();
-
-    // Serialize argv as JSON with stage=true
-    let argv_json = argv.map_or_else(
-        || {
-            Ok(json!({
-                "_": [],
-                "e": client.config.endpoint.as_str(),
-                "endpoint": client.config.endpoint.as_str(),
-                "s": true,
-                "stage": true
-            })
-            .to_string())
-        },
-        |args| {
-            serde_json::to_string(&json!({
-                "_": args,
-                "e": client.config.endpoint.as_str(),
-                "endpoint": client.config.endpoint.as_str(),
-                "s": true,
-                "stage": true
-            }))
-        },
-    )?;
-
-    // Build HTTP request
-    let mut req = client
-        .client
-        .put(&url)
-        .header("Content-Type", "application/gzip")
-        .header("Accept", "application/ndjson")
-        .header("version", &client.config.version)
-        .header("timestamp", timestamp)
-        .header("stage", "true")
-        .header("ssl", "null")
-        .header("argv", argv_json);
-
-    req = req
-        .header("file-count", metadata.file_count.to_string())
-        .header("project-size", metadata.project_size.to_string());
-
-    // Add custom headers if provided
-    if let Some(headers) = headers {
-        debug!("Adding custom headers: {:?}", headers);
-        for (key, value) in headers {
-            req = req.header(&key, value);
-        }
-    }
-
-    // Create tarball stream and attach to request
-    let tar_gz_stream = TarGzStream::new(project_path, 8192)?;
-    req = req.body(Body::wrap_stream(tar_gz_stream));
-    req = client.apply_auth(req, auth);
-
-    // Send request
-    debug!("Sending request to {}", url);
-    let res = req.send().await?;
-    debug!("Response status: {}", res.status());
-
-    // Check response status
-    if !res.status().is_success() {
-        let status = res.status();
-        let text = res.text().await?;
-        error!("Request failed with status {}: {}", status, text);
-        return Err(SurgeError::Api(crate::error::ApiError {
-            errors: vec![format!("Request failed with status: {}", status)],
-            details: Value::Object(serde_json::Map::new()),
-            status: Some(status.as_u16()),
-        }));
-    }
-
-    info!(
-        "Successfully uploaded WIP tarball for domain: {}",
-        preview_domain
-    );
-
-    // Process response as NDJSON stream
-    let stream = res.bytes_stream();
-    let config = NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
-
-    let stream = stream.map(|result| {
-        result.map_err(SurgeError::from).and_then(|bytes| {
-            trace!("Received {} bytes", bytes.len());
-            String::from_utf8(bytes.to_vec()).map_err(|e| {
-                error!("UTF-8 error: {}", e);
-                SurgeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            })
-        })
-    });
-
-    let ndjson_stream = ndjson_stream::from_fallible_stream_with_config(stream, config);
-
-    Ok(ndjson_stream.map(|result: Result<Event, _>| match result {
-        Ok(event) => {
-            debug!("Parsed event: {:?}", event);
-            println!("Event: {:?}", event);
-            if event.event_type == *"error" || event.data.to_string().contains("error") {
-                error!("Server error: {:?}", event);
-                Err(SurgeError::EventError(event))
-            } else if event.event_type == *"info" {
-                info!("Success indicator received");
-                Ok(event)
-            } else {
-                Ok(event)
-            }
-        }
-        Err(FallibleNdjsonError::JsonError(e)) => {
-            error!("JSON parsing error: {}", e);
-            Err(SurgeError::Json(e))
-        }
-        Err(FallibleNdjsonError::InputError(e)) => {
-            error!("Stream error: {:?}", e);
-            Err(SurgeError::Io(std::io::Error::other(e.to_string())))
-        }
-    }))
+    publish_common(client, project_path, domain, auth, headers, argv, true).await
 }
 
 /// Builds a gitignore matcher for `.surgeignore` rules.
@@ -675,16 +431,155 @@ fn build_custom_gitignore(project_path: &Path) -> Result<ignore::gitignore::Giti
     if surgeignore_path.exists() {
         debug!("Reading .surgeignore at: {:?}", surgeignore_path);
         for line in fs::read_to_string(&surgeignore_path)
-            .map_err(|e| SurgeError::Io(std::io::Error::other(e)))?
+            .map_err(|e| SurgeError::Io(e.to_string()))?
             .lines()
         {
             ignore_builder
                 .add_line(None, line)
-                .map_err(SurgeError::IgnoreError)?;
+                .map_err(|e| SurgeError::Ignore(e.to_string()))?;
         }
     } else {
         debug!(".surgeignore not found, using default ignore rules");
     }
 
-    ignore_builder.build().map_err(SurgeError::IgnoreError)
+    ignore_builder
+        .build()
+        .map_err(|e| SurgeError::Ignore(e.to_string()))
+}
+
+async fn publish_common(
+    client: &SurgeSdk,
+    project_path: &Path,
+    domain: &str,
+    auth: &Auth,
+    headers: Option<Vec<(String, String)>>,
+    argv: Option<&[String]>,
+    is_wip: bool,
+) -> Result<impl Stream<Item = Result<Event, SurgeError>>, SurgeError> {
+    info!(
+        "Publishing {}to domain: {}",
+        if is_wip { "WIP " } else { "" },
+        domain
+    );
+    debug!("Project path: {:?}", project_path);
+
+    let target_domain = if is_wip {
+        format!("{}-{}", chrono::Utc::now().timestamp_millis(), domain)
+    } else {
+        domain.to_string()
+    };
+    let url = format!("{}{}", client.config.endpoint, target_domain);
+    debug!("URL: {}", url);
+
+    let metadata = calculate_metadata(project_path)?;
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    let argv_json = match argv {
+        Some(args) => serde_json::to_string(&json!({
+            "_": args,
+            "e": client.config.endpoint.as_str(),
+            "endpoint": client.config.endpoint.as_str(),
+            "s": is_wip,
+            "stage": is_wip
+        }))?,
+        None => json!({
+            "_": [],
+            "e": client.config.endpoint.as_str(),
+            "endpoint": client.config.endpoint.as_str(),
+            "s": is_wip,
+            "stage": is_wip
+        })
+        .to_string(),
+    };
+
+    let mut req = client
+        .client
+        .put(&url)
+        .header("Content-Type", "application/gzip")
+        .header("Accept", "application/ndjson")
+        .header("version", &client.config.version)
+        .header("timestamp", timestamp)
+        .header("stage", is_wip.to_string())
+        .header("ssl", "null")
+        .header("argv", argv_json)
+        .header("file-count", metadata.file_count.to_string())
+        .header("project-size", metadata.project_size.to_string());
+
+    if let Some(headers) = headers {
+        debug!("Adding custom headers: {:?}", headers);
+        for (key, value) in headers {
+            req = req.header(&key, value);
+        }
+    }
+
+    let tar_gz_stream = TarGzStream::new(project_path, 8192)?;
+    req = req.body(Body::wrap_stream(tar_gz_stream));
+    req = client.apply_auth(req, auth);
+
+    debug!("Sending request to {}", url);
+    let res = req.send().await?;
+    debug!("Response status: {}", res.status());
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await?;
+        error!("Request failed with status {}: {}", status, text);
+        return Err(SurgeError::api(
+            Some(status.as_u16()),
+            format!("Request failed with status: {}", status),
+            Value::String(text),
+        ));
+    }
+
+    info!(
+        "Successfully uploaded {}tarball for domain: {}",
+        if is_wip { "WIP " } else { "" },
+        target_domain
+    );
+
+    let bytes_stream = res.bytes_stream().map(|res| {
+        res.map_err(SurgeError::from).and_then(|bytes| {
+            String::from_utf8(bytes.to_vec()).map_err(|err| SurgeError::Io(err.to_string()))
+        })
+    });
+
+    let config = NdjsonConfig::default().with_empty_line_handling(EmptyLineHandling::IgnoreEmpty);
+    let ndjson = ndjson_stream::from_fallible_stream_with_config::<Value, _>(bytes_stream, config);
+
+    Ok(Box::pin(ndjson.map(|line| match line {
+        Ok(raw_json) => match serde_json::from_value::<RawEvent>(raw_json) {
+            Ok(raw_event) => {
+                let event = Event::from(raw_event);
+                info!("{}", event);
+                Ok(event)
+            }
+            Err(e) => {
+                error!("Failed to deserialize RawEvent: {}", e);
+                Err(SurgeError::Json(e.to_string()))
+            }
+        },
+        Err(FallibleNdjsonError::JsonError(e)) => {
+            error!("JSON parsing error: {}", e);
+            Err(SurgeError::Json(e.to_string()))
+        }
+        Err(FallibleNdjsonError::InputError(e)) => {
+            error!("Stream error: {:?}", e);
+            Err(SurgeError::Io(format!("NDJSON stream error: {}", e)))
+        }
+    })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_invalid_directory() {
+        let result = TarGzStream::new(Path::new("nonexistent"), 1024);
+        assert!(matches!(result, Err(SurgeError::Io(_))));
+        if let Err(SurgeError::Io(msg)) = result {
+            assert!(msg.contains("Invalid project directory"));
+        }
+    }
 }
