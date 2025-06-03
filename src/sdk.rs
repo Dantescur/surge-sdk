@@ -44,10 +44,11 @@ use std::{fs, path::Path, time::Duration};
 use reqwest::Client;
 
 use crate::{
-    CertsResponse, DAnalyticsResponse, DAuditResponse, ListResponse, ManifestResponse,
-    MetadataResponse, PlansResponse, UsageResponse,
+    CertsResponse, DAnalyticsResponse, DAuditResponse, DiscardResponse, ListDomainResponse,
+    ListResponse, ListResult, ManifestResponse, MetadataResponse, PlansResponse, RollResponse,
+    TeardownResponse,
     config::Config,
-    error::SurgeError,
+    error::{ApiErrorResponse, SurgeError},
     responses::{AccountResponse, LoginResponse},
     types::{Auth, Event},
 };
@@ -132,11 +133,7 @@ impl SurgeSdk {
     ///
     /// # Returns
     /// A `Result` containing a `ListResponse` or a `SurgeError`.
-    pub async fn list(
-        &self,
-        domain: Option<&str>,
-        auth: &Auth,
-    ) -> Result<Vec<ListResponse>, SurgeError> {
+    pub async fn list(&self, domain: Option<&str>, auth: &Auth) -> Result<ListResult, SurgeError> {
         let path = match domain {
             Some(d) => format!("{}/list", d),
             None => "list".to_string(),
@@ -149,8 +146,16 @@ impl SurgeSdk {
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
 
-        let list_response: Vec<ListResponse> = serde_json::from_str(&body_text)?;
-        Ok(list_response)
+        match domain {
+            Some(_) => {
+                let domain_response: ListDomainResponse = serde_json::from_str(&body_text)?;
+                Ok(ListResult::Domain(domain_response))
+            }
+            None => {
+                let global_response: Vec<ListResponse> = serde_json::from_str(&body_text)?;
+                Ok(ListResult::Global(global_response))
+            }
+        }
     }
 
     /// Deletes the account.
@@ -177,16 +182,21 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing `true` if the operation was successful, or a `SurgeError`.
-    pub async fn teardown(&self, domain: &str, auth: &Auth) -> Result<bool, SurgeError> {
+    /// A `Result` containing `TeardownResponse` if the operation was successful, or a `SurgeError`.
+    pub async fn teardown(
+        &self,
+        domain: &str,
+        auth: &Auth,
+    ) -> Result<TeardownResponse, SurgeError> {
         let url = self.config.endpoint.join(domain)?;
         let req = self.apply_auth(self.client.delete(url), auth);
         debug!("Request sent to teardown: {:#?}", &req);
         let response = req.send().await?;
-        let status = response.status();
         let body_text = response.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(status.is_success())
+
+        let teardown_response: TeardownResponse = serde_json::from_str(&body_text)?;
+        Ok(teardown_response)
     }
 
     /// Logs in to the API.
@@ -201,10 +211,27 @@ impl SurgeSdk {
         let req = self.apply_auth(self.client.post(url), auth);
         debug!("Request sent to login: {:#?}", req);
         let res = req.send().await?;
+        let status = res.status();
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        let login_response: LoginResponse = serde_json::from_str(&body_text)?;
-        Ok(login_response)
+
+        if status.is_success() {
+            let login_response: LoginResponse = serde_json::from_str(&body_text)?;
+            Ok(login_response)
+        } else {
+            // Try to deserialize the error response
+            match serde_json::from_str::<ApiErrorResponse>(&body_text) {
+                Ok(api_error) => Err(SurgeError::Api {
+                    status: api_error.status,
+                    message: api_error.errors.join("; "),
+                    details: api_error.details,
+                }),
+                Err(_) => Err(SurgeError::Http(format!(
+                    "HTTP error: status {}, body: {}",
+                    status, body_text
+                ))),
+            }
+        }
     }
 
     /// Publishes a project directory to a domain.
@@ -263,14 +290,15 @@ impl SurgeSdk {
     ///
     /// # Returns
     /// A `Result` indicating success or a `SurgeError`.
-    pub async fn rollback(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
+    pub async fn rollback(&self, domain: &str, auth: &Auth) -> Result<RollResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollback", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
         debug!("Request sent to rollback: {:#?}", req);
         let res = req.send().await?;
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(())
+        let rollback_response: RollResponse = serde_json::from_str(&body_text)?;
+        Ok(rollback_response)
     }
 
     /// Rolls forward a domain to a newer revision.
@@ -281,14 +309,15 @@ impl SurgeSdk {
     ///
     /// # Returns
     /// A `Result` indicating success or a `SurgeError`.
-    pub async fn rollfore(&self, domain: &str, auth: &Auth) -> Result<(), SurgeError> {
+    pub async fn rollfore(&self, domain: &str, auth: &Auth) -> Result<RollResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/rollfore", domain))?;
         let req = self.apply_auth(self.client.post(url), auth);
         debug!("Request sent to rollfore: {:#?}", req);
         let res = req.send().await?;
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(())
+        let rollfore_response: RollResponse = serde_json::from_str(&body_text)?;
+        Ok(rollfore_response)
     }
 
     /// Switches a domain to a specific revision (or the latest if none specified).
@@ -327,24 +356,21 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` indicating success or a `SurgeError`.
+    /// A `DiscardResponse` indicating success or a `SurgeError`.
     pub async fn discard(
         &self,
-        domain: &str,
-        revision: Option<&str>,
+        revision: &str,
         auth: &Auth,
-    ) -> Result<(), SurgeError> {
-        let path = match revision {
-            Some(rev) => format!("{}/rev/{}", domain, rev),
-            None => format!("{}/rev", domain),
-        };
-        let url = self.config.endpoint.join(&path)?;
+    ) -> Result<DiscardResponse, SurgeError> {
+        let url = self.config.endpoint.join(&format!("{}/rev", revision))?;
         let req = self.apply_auth(self.client.delete(url), auth);
         debug!("Request sent to discard: {:#?}", req);
         let res = req.send().await?;
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(())
+
+        let discard_response: DiscardResponse = serde_json::from_str(&body_text)?;
+        Ok(discard_response)
     }
 
     /// Fetches SSL certificate information for a domain.
@@ -659,8 +685,8 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` containing a `UsageResponse` or a `SurgeError`.
-    pub async fn usage(&self, domain: &str, auth: &Auth) -> Result<UsageResponse, SurgeError> {
+    /// A `Result` containing a `DAnalyticsResponse` or a `SurgeError`.
+    pub async fn usage(&self, domain: &str, auth: &Auth) -> Result<DAnalyticsResponse, SurgeError> {
         let url = self.config.endpoint.join(&format!("{}/usage", domain))?;
         let req = self.apply_auth(self.client.get(url), auth);
         debug!("Request sent to usage: {:#?}", req);
@@ -698,8 +724,13 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` indicating success or a `SurgeError`.
-    pub async fn invite(&self, domain: &str, emails: Value, auth: &Auth) -> Result<(), SurgeError> {
+    /// A `bool` indicating success or a `SurgeError`.
+    pub async fn invite(
+        &self,
+        domain: &str,
+        emails: Value,
+        auth: &Auth,
+    ) -> Result<bool, SurgeError> {
         let url = self
             .config
             .endpoint
@@ -707,9 +738,14 @@ impl SurgeSdk {
         let req = self.apply_auth(self.client.post(url), auth).json(&emails);
         debug!("Request sent to invite: {:#?}", req);
         let res = req.send().await?;
+        let status = res.status();
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(())
+        if status.is_success() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Revokes collaborator access for a domain.
@@ -720,8 +756,13 @@ impl SurgeSdk {
     /// * `auth` - Authentication credentials.
     ///
     /// # Returns
-    /// A `Result` indicating success or a `SurgeError`.
-    pub async fn revoke(&self, domain: &str, emails: Value, auth: &Auth) -> Result<(), SurgeError> {
+    /// A `bool` indicating success or a `SurgeError`.
+    pub async fn revoke(
+        &self,
+        domain: &str,
+        emails: Value,
+        auth: &Auth,
+    ) -> Result<bool, SurgeError> {
         let url = self
             .config
             .endpoint
@@ -729,9 +770,14 @@ impl SurgeSdk {
         let req = self.apply_auth(self.client.delete(url), auth).json(&emails);
         debug!("Request sent to revoke: {:#?}", req);
         let res = req.send().await?;
+        let status = res.status();
         let body_text = res.text().await?;
         debug!("response raw: {:?}", body_text);
-        Ok(())
+        if status.is_success() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Updates the account plan.

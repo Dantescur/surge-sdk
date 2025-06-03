@@ -1,3 +1,6 @@
+/*
+  src/lib.rs
+*/
 //! # Surge SDK for Rust
 //!
 //! A type-safe Rust interface for the [Surge.sh](https://surge.sh) API, enabling programmatic
@@ -38,7 +41,8 @@ pub use config::Config;
 pub use error::SurgeError;
 pub use responses::*;
 pub use sdk::SurgeSdk;
-pub use stream::{calculate_metadata, publish, publish_wip};
+pub use stream::{calculate_metadata, publish};
+// pub use stream::publish_wip;
 pub use types::{Auth, Event};
 pub use utils::{generate_domain, json_to_argv};
 
@@ -53,4 +57,3 @@ pub use utils::{generate_domain, json_to_argv};
 /// let cfg2 = Config::new("https://surge.surge.sh", "0.1.0");
 /// ```
 pub const SURGE_API: &str = "https://surge.surge.sh";
-
